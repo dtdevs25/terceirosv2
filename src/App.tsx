@@ -238,18 +238,8 @@ export default function App() {
           initial={{ opacity: 0, y: 40, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.6, ease: 'easeOut' }}
-          className="relative z-10 w-full max-w-md"
+          className="relative z-10 w-full max-w-sm"
         >
-          {/* Logo above card */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15, duration: 0.5 }}
-            className="flex justify-center mb-6"
-          >
-            <img src="/logo.png" alt="RondaDigital" className="h-16 object-contain drop-shadow-[0_0_20px_rgba(56,189,248,0.4)]" />
-          </motion.div>
-
           {/* Glass card */}
           <div className="rounded-[2rem] p-8 space-y-7"
             style={{
@@ -260,9 +250,14 @@ export default function App() {
               boxShadow: '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15)'
             }}
           >
-            <div className="text-center space-y-1">
-              <h1 className="text-2xl font-black text-white tracking-tight">Bem-vindo</h1>
-              <p className="text-sm text-sky-300/80 font-medium">Segurança e Controle em Tempo Real</p>
+            <div className="text-center space-y-3">
+              <div className="flex justify-center">
+                <img src="/icon.png" alt="RondaDigital" className="h-20 object-contain drop-shadow-[0_0_24px_rgba(56,189,248,0.5)]" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-black text-white tracking-tight">Bem-vindo</h1>
+                <p className="text-sm text-sky-300/80 font-medium mt-0.5">Segurança e Controle em Tempo Real</p>
+              </div>
             </div>
 
             <AnimatePresence mode="wait">
@@ -358,11 +353,6 @@ export default function App() {
               )}
             </AnimatePresence>
           </div>
-
-          {/* Footer */}
-          <p className="text-center text-xs text-white/25 mt-6 font-medium">
-            © {new Date().getFullYear()} RondaDigital · Todos os direitos reservados
-          </p>
         </motion.div>
       </div>
     );
