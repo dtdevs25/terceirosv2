@@ -90,7 +90,8 @@ const Input = ({
   onChange, 
   type = 'text', 
   placeholder,
-  required = false
+  required = false,
+  theme = 'light'
 }: { 
   label: string; 
   value: string; 
@@ -98,16 +99,22 @@ const Input = ({
   type?: string;
   placeholder?: string;
   required?: boolean;
+  theme?: 'light' | 'glass';
 }) => (
   <div className="space-y-1.5">
-    <label className="text-sm font-bold text-gray-700 ml-1">{label}</label>
+    <label className={cn("text-sm font-bold ml-1", theme === 'glass' ? "text-white/90" : "text-gray-700")}>{label}</label>
     <input
       type={type}
       value={value}
       onChange={onChange}
       placeholder={placeholder}
       required={required}
-      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium placeholder:text-gray-400"
+      className={cn(
+        "w-full px-4 py-3 rounded-2xl outline-none transition-all font-medium",
+        theme === 'glass' 
+          ? "bg-white/5 border border-white/20 text-white placeholder:text-white/40 focus:ring-2 focus:ring-white/30 focus:border-white/40"
+          : "bg-gray-50 border border-gray-100 text-gray-900 focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-gray-400"
+      )}
     />
   </div>
 );
@@ -212,18 +219,24 @@ export default function App() {
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-[#002b5c] flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen bg-[#002b5c] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+        {/* Background elements for glassmorphism effect */}
+        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-[128px] opacity-60"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-cyan-500 rounded-full mix-blend-multiply filter blur-[128px] opacity-40"></div>
+
         <motion.div 
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 space-y-6"
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="relative z-10 max-w-md w-full bg-white/10 backdrop-blur-xl border border-white/20 rounded-[2rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] p-8 space-y-8"
         >
-          <div className="text-center space-y-2">
-            <div className="inline-flex p-3 bg-blue-50 rounded-2xl text-primary">
-              <img src="https://storage.googleapis.com/static.antigravity.dev/0656e3d7-6399-4bbe-b236-1adaac3acdfc/attachment/66736c5d-352b-4029-8736-235b3644f77c.png" alt="RondaDigital" className="w-16 h-16 object-contain" />
+          <div className="text-center space-y-4">
+            <div className="inline-flex justify-center w-full">
+              <img src="/logo.png" alt="RondaDigital" className="w-48 object-contain drop-shadow-md" />
             </div>
-            <h1 className="text-3xl font-black text-gray-900 tracking-tight">RondaDigital</h1>
-            <p className="text-gray-500 font-medium text-sm">Segurança e Controle em Tempo Real</p>
+            <div>
+              <p className="text-blue-100 font-medium text-sm tracking-wide">Segurança e Controle em Tempo Real</p>
+            </div>
           </div>
 
           <AnimatePresence mode="wait">
@@ -234,11 +247,12 @@ export default function App() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
                 onSubmit={handleLogin} 
-                className="space-y-4"
+                className="space-y-5"
               >
                 <Input 
                   label="E-mail" 
                   type="email" 
+                  theme="glass"
                   value={email} 
                   onChange={(e) => setEmail(e.target.value)} 
                   placeholder="seu@email.com"
@@ -248,29 +262,32 @@ export default function App() {
                   <Input 
                     label="Senha" 
                     type="password" 
+                    theme="glass"
                     value={password} 
                     onChange={(e) => setPassword(e.target.value)} 
                     placeholder="••••••••"
                     required 
                   />
-                  <button 
-                    type="button"
-                    onClick={() => setAuthMode('forgot')}
-                    className="text-xs text-primary font-bold hover:underline ml-1"
-                  >
-                    Esqueceu a senha?
-                  </button>
+                  <div className="flex justify-end pt-1">
+                    <button 
+                      type="button"
+                      onClick={() => setAuthMode('forgot')}
+                      className="text-xs text-blue-200 font-medium hover:text-white hover:underline transition-colors"
+                    >
+                      Esqueceu a senha?
+                    </button>
+                  </div>
                 </div>
 
                 {authError && (
-                  <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded-xl flex items-center gap-2">
-                    <AlertCircle size={14} />
+                  <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-3 bg-red-500/20 border border-red-500/30 text-white text-xs font-medium rounded-xl flex items-center gap-2">
+                    <AlertCircle size={14} className="text-red-300" />
                     {authError}
-                  </div>
+                  </motion.div>
                 )}
 
-                <Button type="submit" disabled={authLoading} className="w-full py-3.5 rounded-2xl">
-                  {authLoading ? 'Entrando...' : 'Entrar'}
+                <Button type="submit" disabled={authLoading} className="w-full py-4 text-sm tracking-wide bg-blue-600 hover:bg-blue-500 text-white border-none shadow-lg shadow-blue-900/50 rounded-2xl">
+                  {authLoading ? 'Entrando...' : 'Entrar no Sistema'}
                 </Button>
               </motion.form>
             )}
@@ -282,16 +299,17 @@ export default function App() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
                 onSubmit={handleForgotPassword} 
-                className="space-y-4"
+                className="space-y-5"
               >
-                <div className="space-y-2">
-                  <h2 className="text-xl font-bold text-gray-900">Recuperar Senha</h2>
-                  <p className="text-sm text-gray-500">Insira seu e-mail para receber um link de redefinição.</p>
+                <div className="space-y-2 text-center pb-2">
+                  <h2 className="text-xl font-bold text-white tracking-tight">Recuperar Senha</h2>
+                  <p className="text-sm text-blue-200">Insira seu e-mail para receber as instruções.</p>
                 </div>
 
                 <Input 
                   label="E-mail" 
                   type="email" 
+                  theme="glass"
                   value={email} 
                   onChange={(e) => setEmail(e.target.value)} 
                   placeholder="seu@email.com"
