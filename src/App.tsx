@@ -1326,7 +1326,7 @@ function UsuariosView() {
         displayName: newName,
         role: newRole
       });
-      showFeedback('success', 'Usuário pré-cadastrado! Ele deve entrar com este email.');
+      showFeedback('success', 'Convite gerado! O usuário receberá um e-mail para cadastrar a senha (válido por 1 hora).');
       setIsAdding(false);
       setNewName('');
       setNewEmail('');

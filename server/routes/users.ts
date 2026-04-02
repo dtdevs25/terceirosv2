@@ -1,9 +1,24 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import { requireAuth, requireAdmin, AuthRequest } from '../auth/middleware.js';
 import { query, queryOne } from '../db.js';
 
 const router = Router();
+
+const mailer = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'localhost',
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: parseInt(process.env.SMTP_PORT || '587') === 465,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false,
+  },
+});
 
 router.use(requireAuth);
 router.use(requireAdmin);
@@ -45,15 +60,10 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 // ============================================================
 router.post('/', async (req: AuthRequest, res: Response) => {
   try {
-    const { email, displayName, role, password } = req.body;
+    const { email, displayName, role } = req.body;
 
-    if (!email || !displayName || !password) {
-      res.status(400).json({ error: 'Email, nome e senha são obrigatórios.' });
-      return;
-    }
-
-    if (password.length < 8) {
-      res.status(400).json({ error: 'A senha deve ter no mínimo 8 caracteres.' });
+    if (!email || !displayName) {
+      res.status(400).json({ error: 'Email e nome são obrigatórios.' });
       return;
     }
 
@@ -71,7 +81,9 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    // Gerar uma senha hash dummy aleatória já que ele fará login através do link
+    const randomPassword = crypto.randomBytes(32).toString('hex');
+    const passwordHash = await bcrypt.hash(randomPassword, 12);
 
     const user = await queryOne<{
       id: string;
@@ -91,6 +103,55 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       res.status(500).json({ error: 'Erro ao criar usuário.' });
       return;
     }
+
+    // Gera token construtivo de senha (1 hora)
+    const resetToken = crypto.randomBytes(64).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); 
+
+    await query(
+      `UPDATE users 
+       SET reset_token = $1, reset_token_expires = $2
+       WHERE id = $3`,
+      [resetTokenHash, expiresAt, user.id]
+    );
+
+    const appUrl = process.env.APP_URL || 'https://ronda.ehspro.com.br';
+    const resetUrl = `${appUrl}/?reset_token=${resetToken}`;
+
+    await mailer.sendMail({
+      from: `"RondaDigital" <${process.env.SMTP_USER}>`,
+      to: user.email,
+      subject: 'Convite para ingressar na RondaDigital',
+      html: `
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head><meta charset="UTF-8"></head>
+        <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 40px 20px;">
+          <div style="max-width: 500px; margin: 0 auto; background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
+            <div style="text-align: center; margin-bottom: 32px;">
+              <h1 style="color: #002b5c; font-size: 24px; margin: 0;">🛡️ RondaDigital</h1>
+              <p style="color: #6b7280; margin: 8px 0 0;">Segurança e Controle em Tempo Real</p>
+            </div>
+            <h2 style="color: #1f2937; font-size: 18px;">Olá, ${user.display_name}!</h2>
+            <p style="color: #4b5563; line-height: 1.6;">
+              Você foi convidado para acessar e utilizar o sistema RondaDigital. 
+              Clique no botão abaixo para concluir o seu cadastro definindo a sua senha inicial de acesso:
+            </p>
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="${resetUrl}" 
+                 style="background-color: #002b5c; color: white; padding: 14px 32px; border-radius: 12px; text-decoration: none; font-weight: bold; display: inline-block;">
+                Cadastrar Minha Senha
+              </a>
+            </div>
+            <p style="color: #9ca3af; font-size: 13px; text-align: center;">
+              Este link de cadastro inicial é válido por <strong>1 hora</strong>.<br>
+            </p>
+          </div>
+        </body>
+        </html>
+      `,
+    }).catch(err => console.error('Invite email send error:', err));
 
     res.status(201).json({
       uid: user.id,

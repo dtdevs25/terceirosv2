@@ -14,10 +14,10 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const { startDate, endDate } = req.query;
     
     const start = startDate 
-      ? new Date(`${startDate}T00:00:00`) 
+      ? new Date(startDate as string) 
       : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const end = endDate 
-      ? new Date(`${endDate}T23:59:59`) 
+      ? new Date(endDate as string) 
       : new Date();
 
     let logs;
