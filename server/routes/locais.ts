@@ -132,14 +132,14 @@ router.put('/:id', requireAdmin, async (req: AuthRequest, res: Response) => {
 });
 
 // ============================================================
-// DELETE /api/locais/:id - Remove local (admin only, soft delete)
+// DELETE /api/locais/:id - Remove local (admin only, hard delete)
 // ============================================================
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
     const result = await queryOne<{ id: string }>(
-      `UPDATE locations SET is_active = FALSE WHERE id = $1 AND is_active = TRUE RETURNING id`,
+      `DELETE FROM locations WHERE id = $1 RETURNING id`,
       [id]
     );
 

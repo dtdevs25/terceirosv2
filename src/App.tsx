@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { UserProfile, Location, ScanLog, UserRole } from './types';
 import { cn } from './lib/utils';
 import { api, getStoredUser, saveSession, clearSession } from './api';
@@ -722,12 +722,24 @@ function RondasView({ profile }: { profile: UserProfile | null }) {
     if (!profile?.uid) return;
 
     try {
-      const [todayIds, logs] = await Promise.all([
-        api.get<string[]>('/logs/today'),
-        api.get<ScanLog[]>('/logs/my')
-      ]);
-      setScannedToday(todayIds || []);
-      setUserLogs(logs || []);
+      if (profile.role === 'admin') {
+        // Admin vê todas as rondas dos últimos 7 dias
+        const end = new Date();
+        const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const [todayIds, logs] = await Promise.all([
+          api.get<string[]>('/logs/today'),
+          api.get<ScanLog[]>(`/logs?startDate=${start.toISOString()}&endDate=${end.toISOString()}`)
+        ]);
+        setScannedToday(todayIds || []);
+        setUserLogs(logs || []);
+      } else {
+        const [todayIds, logs] = await Promise.all([
+          api.get<string[]>('/logs/today'),
+          api.get<ScanLog[]>('/logs/my')
+        ]);
+        setScannedToday(todayIds || []);
+        setUserLogs(logs || []);
+      }
     } catch (err) {
       console.error('Erro ao buscar logs:', err);
     }
@@ -760,17 +772,25 @@ function RondasView({ profile }: { profile: UserProfile | null }) {
     }
   };
 
+  const isAdmin = profile?.role === 'admin';
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black text-gray-900 tracking-tight">Minhas Rondas</h2>
-          <p className="text-gray-500 font-medium">Gerencie suas atividades e consulte seu histórico.</p>
+          <h2 className="text-3xl font-black text-gray-900 tracking-tight">
+            {isAdmin ? 'Rondas Realizadas' : 'Minhas Rondas'}
+          </h2>
+          <p className="text-gray-500 font-medium">
+            {isAdmin ? 'Histórico de todas as rondas da equipe.' : 'Gerencie suas atividades e consulte seu histórico.'}
+          </p>
         </div>
-        <Button onClick={() => setScanning(true)} className="py-4 px-6 rounded-2xl text-lg">
-          <Camera size={24} />
-          Escanear QR Code
-        </Button>
+        {!isAdmin && (
+          <Button onClick={() => setScanning(true)} className="py-4 px-6 rounded-2xl text-lg">
+            <Camera size={24} />
+            Escanear QR Code
+          </Button>
+        )}
       </div>
 
       {successMsg && (
@@ -795,10 +815,12 @@ function RondasView({ profile }: { profile: UserProfile | null }) {
         </motion.div>
       )}
 
-      {/* Histórico de Rondas do Usuário */}
+      {/* Histórico de Rondas */}
       <div className="space-y-6 pt-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h3 className="text-xl font-black text-gray-900 tracking-tight">Meu Histórico de Rondas</h3>
+          <h3 className="text-xl font-black text-gray-900 tracking-tight">
+            {isAdmin ? 'Histórico Geral (7 dias)' : 'Meu Histórico de Rondas'}
+          </h3>
           <div className="flex items-center gap-2">
             <div className="relative flex-1 md:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -865,15 +887,16 @@ function RondasView({ profile }: { profile: UserProfile | null }) {
             <table className="w-full text-left">
               <thead className="bg-gray-50/50 border-b border-gray-100">
                 <tr>
+                  {isAdmin && <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Vigilante</th>}
                   <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Local</th>
                   <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Data/Hora</th>
-                  <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Status</th>
+                  {!isAdmin && <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Status</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 bg-white">
                 {filteredLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="px-6 py-16 text-center text-gray-400">
+                    <td colSpan={isAdmin ? 3 : 3} className="px-6 py-16 text-center text-gray-400">
                       <div className="flex flex-col items-center gap-4">
                         <History size={48} className="opacity-20" />
                         <p className="font-medium">Nenhum registro de ronda encontrado.</p>
@@ -883,6 +906,19 @@ function RondasView({ profile }: { profile: UserProfile | null }) {
                 ) : (
                   filteredLogs.map((log) => (
                     <tr key={log.id} className="hover:bg-gray-50/30 transition-colors group">
+                      {isAdmin && (
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-xl bg-primary/5 flex items-center justify-center text-primary font-black border border-primary/10">
+                              {log.userName?.[0]}
+                            </div>
+                            <div>
+                              <p className="font-bold text-gray-900 text-sm">{log.userName}</p>
+                              <p className="text-[10px] text-gray-400">{log.userEmail}</p>
+                            </div>
+                          </div>
+                        </td>
+                      )}
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-2xl bg-primary/5 flex items-center justify-center text-primary border border-primary/10">
@@ -901,12 +937,14 @@ function RondasView({ profile }: { profile: UserProfile | null }) {
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-5 text-right">
-                        <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-secondary bg-secondary/10 px-3 py-1 rounded-full border border-secondary/20">
-                          <CheckCircle2 size={12} />
-                          Realizada
-                        </span>
-                      </td>
+                      {!isAdmin && (
+                        <td className="px-6 py-5 text-right">
+                          <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-secondary bg-secondary/10 px-3 py-1 rounded-full border border-secondary/20">
+                            <CheckCircle2 size={12} />
+                            Realizada
+                          </span>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -916,7 +954,7 @@ function RondasView({ profile }: { profile: UserProfile | null }) {
         </Card>
       </div>
 
-      {scanning && (
+      {!isAdmin && scanning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <motion.div 
             initial={{ opacity: 0 }}
@@ -1031,17 +1069,30 @@ function RondasView({ profile }: { profile: UserProfile | null }) {
 }
 
 function Scanner({ onScanSuccess }: { onScanSuccess: (text: string) => void }) {
-  useEffect(() => {
-    const scanner = new Html5QrcodeScanner('reader', { 
-      fps: 10, 
-      qrbox: { width: 250, height: 250 },
-      aspectRatio: 1.0
-    }, false);
+  const lockRef = useRef(false);
 
-    scanner.render(onScanSuccess, (err) => {});
+  useEffect(() => {
+    lockRef.current = false;
+
+    const handleScan = (text: string) => {
+      if (lockRef.current) return; // bloqueia leituras duplicadas
+      lockRef.current = true;
+      onScanSuccess(text);
+    };
+
+    const scanner = new Html5QrcodeScanner('reader', {
+      fps: 5,
+      qrbox: { width: 250, height: 250 },
+      aspectRatio: 1.0,
+      videoConstraints: {
+        facingMode: { ideal: 'environment' } // prefere câmera traseira
+      }
+    } as any, false);
+
+    scanner.render(handleScan, () => {});
 
     return () => {
-      scanner.clear().catch(error => console.error("Failed to clear scanner", error));
+      scanner.clear().catch((error: any) => console.error('Failed to clear scanner', error));
     };
   }, []);
 
@@ -1825,17 +1876,17 @@ function LogsView() {
 
   useEffect(() => {
     const fetchLogs = async () => {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
+      // Construir datas sem erros de timezone: usar string ISO local
+      const [sy, sm, sd] = startDate.split('-').map(Number);
+      const [ey, em, ed] = endDate.split('-').map(Number);
+      const start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+      const end   = new Date(ey, em - 1, ed, 23, 59, 59, 999);
 
       try {
         const url = `/logs?startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
         const logsData = await api.get<ScanLog[]>(url) || [];
         setLogs(logsData);
 
-        // Extract unique vigilantes and locations for filters
         const vMap = new Map();
         const lMap = new Map();
         logsData.forEach(log => {
@@ -1848,7 +1899,7 @@ function LogsView() {
         console.error('Erro ao buscar logs:', err);
       }
     };
-    
+
     fetchLogs();
   }, [startDate, endDate]);
 
