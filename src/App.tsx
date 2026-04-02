@@ -240,22 +240,21 @@ export default function App() {
           transition={{ duration: 0.6, ease: 'easeOut' }}
           className="relative z-10 w-full max-w-sm"
         >
-          {/* Glass card */}
+          {/* White translucent card */}
           <div className="rounded-[2rem] p-8 space-y-7"
             style={{
-              background: 'rgba(255,255,255,0.08)',
+              background: 'rgba(255,255,255,0.95)',
               backdropFilter: 'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
-              border: '1px solid rgba(255,255,255,0.18)',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15)'
+              boxShadow: '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.5)'
             }}
           >
             <div className="text-center space-y-4">
               <div className="flex justify-center mb-2">
-                <img src="/RondaDigital.png" alt="RondaDigital" className="h-40 object-contain drop-shadow-[0_0_24px_rgba(56,189,248,0.5)]" />
+                <img src="/RondaDigital.png" alt="RondaDigital" className="h-32 object-contain" />
               </div>
               <div>
-                <p className="text-sm text-sky-300/80 font-medium">Segurança e Controle em Tempo Real</p>
+                <p className="text-sm text-gray-500 font-medium">Segurança e Controle em Tempo Real</p>
               </div>
             </div>
 
@@ -269,15 +268,15 @@ export default function App() {
                   onSubmit={handleLogin}
                   className="space-y-5"
                 >
-                  <Input label="E-mail" type="email" theme="glass" value={email}
+                  <Input label="E-mail" type="email" theme="light" value={email}
                     onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" required />
 
                   <div className="space-y-1">
-                    <Input label="Senha" type="password" theme="glass" value={password}
+                    <Input label="Senha" type="password" theme="light" value={password}
                       onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
                     <div className="flex justify-end pt-1">
                       <button type="button" onClick={() => setAuthMode('forgot')}
-                        className="text-xs text-sky-300 font-medium hover:text-white transition-colors hover:underline">
+                        className="text-xs text-primary font-medium hover:text-primary/80 transition-colors hover:underline">
                         Esqueceu a senha?
                       </button>
                     </div>
@@ -285,9 +284,9 @@ export default function App() {
 
                   {authError && (
                     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                      className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-red-200"
-                      style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)' }}>
-                      <AlertCircle size={14} className="text-red-400 shrink-0" />
+                      className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-red-700"
+                      style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                      <AlertCircle size={14} className="text-red-500 shrink-0" />
                       {authError}
                     </motion.div>
                   )}
@@ -313,29 +312,29 @@ export default function App() {
                   className="space-y-5"
                 >
                   <div className="text-center space-y-1">
-                    <h2 className="text-lg font-bold text-white">Recuperar Senha</h2>
-                    <p className="text-sm text-sky-300/80">Insira seu e-mail para receber as instruções.</p>
+                    <h2 className="text-lg font-bold text-gray-900">Recuperar Senha</h2>
+                    <p className="text-sm text-gray-500">Insira seu e-mail para receber as instruções.</p>
                   </div>
 
-                  <Input label="E-mail" type="email" theme="glass" value={email}
+                  <Input label="E-mail" type="email" theme="light" value={email}
                     onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" required />
 
                   {authError && (
                     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                      className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-red-200"
-                      style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)' }}>
-                      <AlertCircle size={14} className="text-red-400 shrink-0" />
+                      className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-red-700"
+                      style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                      <AlertCircle size={14} className="text-red-500 shrink-0" />
                       {authError}
                     </motion.div>
                   )}
 
                   {authSuccess && (
-                    <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                      className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-green-200"
-                      style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)' }}>
-                      <CheckCircle2 size={14} className="text-green-400 shrink-0" />
-                      {authSuccess}
-                    </motion.div>
+                     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+                       className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-green-700"
+                       style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                       <CheckCircle2 size={14} className="text-green-500 shrink-0" />
+                       {authSuccess}
+                     </motion.div>
                   )}
 
                   <button type="submit" disabled={authLoading}
@@ -345,7 +344,7 @@ export default function App() {
                   </button>
 
                   <button type="button" onClick={() => setAuthMode('login')}
-                    className="w-full text-center text-sm text-sky-300 font-medium hover:text-white transition-colors">
+                    className="w-full text-center text-sm text-primary font-medium hover:text-primary/80 transition-colors">
                     ← Voltar para o Login
                   </button>
                 </motion.form>
