@@ -250,13 +250,12 @@ export default function App() {
               boxShadow: '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15)'
             }}
           >
-            <div className="text-center space-y-3">
-              <div className="flex justify-center">
-                <img src="/logo.png" alt="RondaDigital" className="h-20 object-contain drop-shadow-[0_0_24px_rgba(56,189,248,0.5)]" />
+            <div className="text-center space-y-4">
+              <div className="flex justify-center mb-2">
+                <img src="/RondaDigital.png" alt="RondaDigital" className="h-40 object-contain drop-shadow-[0_0_24px_rgba(56,189,248,0.5)]" />
               </div>
               <div>
-                <h1 className="text-2xl font-black text-white tracking-tight">Bem-vindo</h1>
-                <p className="text-sm text-sky-300/80 font-medium mt-0.5">Segurança e Controle em Tempo Real</p>
+                <p className="text-sm text-sky-300/80 font-medium">Segurança e Controle em Tempo Real</p>
               </div>
             </div>
 
@@ -371,8 +370,7 @@ export default function App() {
             <Menu size={24} />
           </button>
           <div className="flex items-center gap-2">
-            <img src="https://storage.googleapis.com/static.antigravity.dev/0656e3d7-6399-4bbe-b236-1adaac3acdfc/attachment/66736c5d-352b-4029-8736-235b3644f77c.png" alt="RondaDigital" className="w-10 h-10 object-contain" />
-            <span className="text-xl font-bold text-gray-900 tracking-tight">RondaDigital</span>
+            <img src="/logo.png" alt="RondaDigital" className="h-10 object-contain" />
           </div>
           <div className="hidden md:block h-6 w-px bg-gray-200 mx-2" />
           <div className="hidden md:block text-sm text-gray-500 font-medium">
@@ -452,8 +450,7 @@ export default function App() {
               >
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center gap-2">
-                    <img src="https://storage.googleapis.com/static.antigravity.dev/0656e3d7-6399-4bbe-b236-1adaac3acdfc/attachment/66736c5d-352b-4029-8736-235b3644f77c.png" alt="RondaDigital" className="w-8 h-8 object-contain" />
-                    <span className="text-xl font-bold">RondaDigital</span>
+                    <img src="/logo.png" alt="RondaDigital" className="h-8 object-contain filter brightness-0 invert" />
                   </div>
                   <button onClick={() => setIsMenuOpen(false)}>
                     <X size={24} />
