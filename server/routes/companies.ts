@@ -14,16 +14,24 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     if (req.user?.role === 'master') {
       const companies = await query<{
         id: string;
+        parent_id: string | null;
         name: string;
         cnpj: string;
         is_active: boolean;
         created_at: string;
       }>(
-        `SELECT id, name, cnpj, is_active, created_at 
+        `SELECT id, parent_id, name, cnpj, is_active, created_at 
          FROM companies 
          ORDER BY name ASC`
       );
-      res.json(companies);
+      res.json(companies.map(c => ({
+        id: c.id,
+        parentId: c.parent_id,
+        name: c.name,
+        cnpj: c.cnpj,
+        isActive: c.is_active,
+        createdAt: c.created_at
+      })));
     } else {
       if (!req.user?.companyId) {
         res.json([]);
@@ -57,7 +65,7 @@ router.use(requireMaster);
 // ============================================================
 router.post('/', async (req: AuthRequest, res: Response) => {
   try {
-    const { name, cnpj } = req.body;
+    const { name, cnpj, parentId } = req.body;
 
     if (!name) {
       res.status(400).json({ error: 'Nome é obrigatório.' });
@@ -65,10 +73,10 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     }
 
     const company = await queryOne<{ id: string; name: string; cnpj: string; is_active: boolean; created_at: string }>(
-      `INSERT INTO companies (name, cnpj)
-       VALUES ($1, $2)
+      `INSERT INTO companies (name, cnpj, parent_id)
+       VALUES ($1, $2, $3)
        RETURNING id, name, cnpj, is_active, created_at`,
-      [name.trim(), cnpj ? cnpj.trim() : null]
+      [name.trim(), cnpj ? cnpj.trim() : null, parentId || null]
     );
 
     res.status(201).json(company);
@@ -88,13 +96,13 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 router.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, cnpj, is_active } = req.body;
+    const { name, cnpj, is_active, parentId } = req.body;
 
     const company = await queryOne<{ id: string; name: string; cnpj: string; is_active: boolean; created_at: string }>(
-      `UPDATE companies SET name = $1, cnpj = $2, is_active = COALESCE($3, is_active)
-       WHERE id = $4
+      `UPDATE companies SET name = $1, cnpj = $2, is_active = COALESCE($3, is_active), parent_id = $4
+       WHERE id = $5
        RETURNING id, name, cnpj, is_active, created_at`,
-      [name?.trim(), cnpj?.trim() || null, is_active, id]
+      [name?.trim(), cnpj?.trim() || null, is_active, parentId || null, id]
     );
 
     if (!company) {

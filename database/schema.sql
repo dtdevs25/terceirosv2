@@ -9,6 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ============================================================
 CREATE TABLE IF NOT EXISTS companies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_id UUID REFERENCES companies(id) ON DELETE CASCADE, -- Hierarquia (Matriz -> Filial)
   name VARCHAR(255) UNIQUE NOT NULL,
   cnpj VARCHAR(20) UNIQUE,
   is_active BOOLEAN DEFAULT TRUE,
@@ -172,3 +173,9 @@ CREATE OR REPLACE TRIGGER update_empresas_terceiro_timestamp BEFORE UPDATE ON em
 CREATE OR REPLACE TRIGGER update_tipos_treinamento_timestamp BEFORE UPDATE ON tipos_treinamento FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE OR REPLACE TRIGGER update_tipos_atividade_timestamp BEFORE UPDATE ON tipos_atividade FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE OR REPLACE TRIGGER update_pessoas_timestamp BEFORE UPDATE ON pessoas FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+-- ============================================================
+-- MIGRAÇÕES / AJUSTES POST-INITIALIZATION
+-- ============================================================
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+

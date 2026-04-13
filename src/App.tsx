@@ -1146,21 +1146,27 @@ function AtividadesView({ profile }: { profile: UserProfile }) {
 // ─── Companies View (Master) ──────────────────────────────────────────────────
 
 function CompaniesView() {
-  const CompanyForm = ({ item, onSave, onClose }: { item: Company | null; onSave: () => void; onClose: () => void }) => {
+  const CompanyForm = ({ item, onSave, onClose, companies }: { item: Company | null; onSave: () => void; onClose: () => void; companies: Company[] }) => {
     const [name, setName] = useState(item?.name || '');
     const [cnpj, setCnpj] = useState(item?.cnpj || '');
+    const [parentId, setParentId] = useState(item?.parentId || '');
     const [saving, setSaving] = useState(false);
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault(); setSaving(true);
       try {
-        if (item) await api.put(`/companies/${item.id}`, { name, cnpj });
-        else await api.post('/companies', { name, cnpj });
+        const payload = { name, cnpj, parentId: parentId || null };
+        if (item) await api.put(`/companies/${item.id}`, payload);
+        else await api.post('/companies', payload);
         onSave();
       } catch (err: any) { alert(err.error || 'Erro.'); } finally { setSaving(false); }
     };
     return (
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input label="Nome" value={name} onChange={setName} required />
+        <Select label="Empresa Matriz / Mandante" value={parentId} onChange={setParentId}>
+          <option value="">— Nenhuma (Esta é a Matriz) —</option>
+          {companies.filter(c => c.id !== item?.id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </Select>
+        <Input label="Nome da Unidade / Filial" value={name} onChange={setName} required placeholder="Ex: Matriz Itaquera, Filial Santos..." />
         <Input label="CNPJ" value={cnpj} onChange={setCnpj} placeholder="00.000.000/0000-00" />
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
@@ -1174,14 +1180,24 @@ function CompaniesView() {
       title="Companhias" subtitle="Gerencie as empresas contratantes do sistema."
       endpoint="/companies" icon={ShieldCheck}
       columns={[
-        { label: 'Nome', render: c => <span className="font-semibold">{c.name}</span> },
+        { label: 'Unidade / Filial', render: c => (
+          <div>
+            <span className="font-semibold block">{c.name}</span>
+            {c.parentId && (
+              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase">
+                Filial de: {items.find(parent => parent.id === c.parentId)?.name || '...'}
+              </span>
+            )}
+          </div>
+        )},
         { label: 'CNPJ', render: c => c.cnpj || '—' },
         { label: 'Status', render: c => <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', c.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>{c.isActive ? 'Ativa' : 'Inativa'}</span> },
       ]}
-      renderForm={(item, onSave, onClose) => <CompanyForm item={item as any} onSave={onSave} onClose={onClose} />}
+      renderForm={(item, onSave, onClose) => <CompanyForm item={item as any} onSave={onSave} onClose={onClose} companies={items} />}
     />
   );
 }
+
 
 // ─── Usuários View ────────────────────────────────────────────────────────────
 
