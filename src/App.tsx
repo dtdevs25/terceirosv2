@@ -310,17 +310,19 @@ function Sidebar({ activeTab, setActiveTab, profile, collapsed, setCollapsed }: 
   activeTab: TabId; setActiveTab: (t: TabId) => void;
   profile: UserProfile; collapsed: boolean; setCollapsed: (v: boolean) => void;
 }) {
-  const items: { id: TabId; label: string; icon: any; roles: string[] }[] = [
-    { id: 'portaria',        label: 'Portaria',           icon: Home,        roles: ['master','admin','viewer'] },
-    { id: 'pessoas',         label: 'Visitantes e Prestadores', icon: Users, roles: ['master','admin'] },
-    { id: 'empresas_terceiro',label:'Empresas de Origem', icon: Building2,   roles: ['master','admin'] },
-    { id: 'treinamentos',    label: 'Tipos de Treinamento',icon: BookOpen,   roles: ['master','admin'] },
-    { id: 'atividades',      label: 'Tipos de Atividade', icon: Briefcase,   roles: ['master','admin'] },
-    { id: 'companies',       label: 'Companhias',         icon: ShieldCheck, roles: ['master'] },
-    { id: 'usuarios',        label: 'Usuários',           icon: UserCog,     roles: ['master','admin'] },
+  const items: { id: TabId; label: string; icon: any; roles: string[]; category: 'NAVEGAÇÃO' | 'CADASTROS' | 'CONFIGURAÇÕES' }[] = [
+    { id: 'portaria',        label: 'Portaria',           icon: Home,        roles: ['master','admin','viewer'], category: 'NAVEGAÇÃO' },
+    { id: 'pessoas',         label: 'Visitantes e Prestadores', icon: Users, roles: ['master','admin'],          category: 'NAVEGAÇÃO' },
+    { id: 'empresas_terceiro',label:'Provedores',           icon: Building2,   roles: ['master','admin'],          category: 'CADASTROS' },
+    { id: 'treinamentos',    label: 'Treinamentos',         icon: BookOpen,   roles: ['master','admin'],          category: 'CADASTROS' },
+    { id: 'atividades',      label: 'Profissões / Funções', icon: Briefcase,   roles: ['master','admin'],          category: 'CADASTROS' },
+    { id: 'companies',       label: 'Empresas',             icon: ShieldCheck, roles: ['master'],                category: 'CONFIGURAÇÕES' },
+    { id: 'usuarios',        label: 'Usuários do Sistema',  icon: UserCog,     roles: ['master','admin'],          category: 'CONFIGURAÇÕES' },
   ];
 
   const visible = items.filter(i => i.roles.includes(profile.role));
+
+  const categories = ['NAVEGAÇÃO', 'CADASTROS', 'CONFIGURAÇÕES'] as const;
 
   return (
     <motion.aside 
@@ -338,36 +340,44 @@ function Sidebar({ activeTab, setActiveTab, profile, collapsed, setCollapsed }: 
 
       <div className="flex flex-col h-full overflow-hidden">
         {/* Nav */}
-        <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto custom-scrollbar">
-          <p className={cn("px-4 mb-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] transition-opacity duration-300", collapsed ? "opacity-0" : "opacity-100")}>
-            Navegação
-          </p>
-          {visible.map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)}
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-sm font-semibold transition-all relative group/item',
-                activeTab === item.id
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-100',
-                collapsed && 'justify-center'
-              )}>
-              <item.icon size={20} className={cn("transition-transform shrink-0", activeTab === item.id ? "scale-110" : "group-hover/item:scale-110")} />
-              
-              {!collapsed && (
-                <motion.span 
-                  initial={{ opacity: 0, x: -10 }} 
-                  animate={{ opacity: 1, x: 0 }}
-                  className="truncate"
-                >
-                  {item.label}
-                </motion.span>
-              )}
-              
-              {collapsed && activeTab === item.id && (
-                <div className="absolute left-0 w-1 h-6 bg-white rounded-r-full" />
-              )}
-            </button>
-          ))}
+        <nav className="flex-1 px-3 py-6 space-y-6 overflow-y-auto custom-scrollbar">
+          {categories.map(cat => {
+            const catItems = visible.filter(i => i.category === cat);
+            if (catItems.length === 0) return null;
+            
+            return (
+              <div key={cat} className="space-y-1">
+                <p className={cn(
+                  "px-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] transition-opacity duration-300 mb-2",
+                  collapsed ? "opacity-0" : "opacity-100"
+                )}>
+                  {cat}
+                </p>
+                {catItems.map(item => (
+                  <button key={item.id} onClick={() => setActiveTab(item.id)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-sm font-semibold transition-all relative group/item',
+                      activeTab === item.id
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                        : 'text-slate-400 hover:bg-white/5 hover:text-slate-100',
+                      collapsed && 'justify-center'
+                    )}>
+                    <item.icon size={20} className={cn("transition-transform shrink-0", activeTab === item.id ? "scale-110" : "group-hover/item:scale-110")} />
+                    
+                    {!collapsed && (
+                      <motion.span initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="truncate">
+                        {item.label}
+                      </motion.span>
+                    )}
+                    
+                    {collapsed && activeTab === item.id && (
+                      <div className="absolute left-0 w-1 h-6 bg-white rounded-r-full" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </nav>
 
         {/* User Footer - Just the name */}
@@ -974,10 +984,10 @@ function EmpresasTerceiroView({ profile }: { profile: UserProfile }) {
   };
   return (
     <SimpleListView<EmpresaTerceiro>
-      title="Empresas de Origem" subtitle="Gerencie as empresas dos visitantes e prestadores."
+      title="Provedores" subtitle="Gerencie as empresas prestadoras de serviço (terceirizadas)."
       endpoint="/empresas-terceiro" icon={Building2}
       columns={[
-        { label: 'Nome', render: e => <span className="font-medium">{e.name}</span> },
+        { label: 'Nome / Razão Social', render: e => <span className="font-medium">{e.name}</span> },
         { label: 'CNPJ', render: e => e.cnpj || '—' },
       ]}
       renderForm={(item, onSave, onClose) => <EmpresaForm item={item as any} onSave={onSave} onClose={onClose} />}
@@ -1006,8 +1016,8 @@ function TreinamentosView({ profile }: { profile: UserProfile }) {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Tipos de Treinamento</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Defina os treinamentos e suas validades em meses.</p>
+          <h1 className="text-2xl font-bold text-slate-900">Treinamentos</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Gerencie os treinamentos obrigatórios.</p>
         </div>
         <Button onClick={() => setShowForm(true)}><Plus size={16} /> Novo</Button>
       </div>
@@ -1177,7 +1187,7 @@ function CompaniesView() {
   };
   return (
     <SimpleListView<Company>
-      title="Companhias" subtitle="Gerencie as empresas contratantes do sistema."
+      title="Empresas Mandantes" subtitle="Gerencie as empresas e unidades contratantes do sistema."
       endpoint="/companies" icon={ShieldCheck}
       columns={[
         { label: 'Unidade / Filial', render: c => (
