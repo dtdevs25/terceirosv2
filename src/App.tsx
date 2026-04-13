@@ -195,27 +195,18 @@ function LoginPage({ onLogin }: { onLogin: (user: UserProfile) => void }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-slate-950">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Background Decor */}
-      <div className="absolute inset-0 bg-grid-white opacity-20" />
-      <div className="absolute inset-0 bg-lines-white" />
+      <div className="absolute inset-0 bg-grid-slate-900 opacity-100" />
       
       {/* Background glows */}
       <motion.div 
         animate={{ 
-          scale: [1, 1.2, 1],
-          opacity: [0.15, 0.25, 0.15] 
+          scale: [1, 1.1, 1],
+          opacity: [0.3, 0.5, 0.3] 
         }}
         transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] bg-blue-600/30" 
-      />
-      <motion.div 
-        animate={{ 
-          scale: [1.2, 1, 1.2],
-          opacity: [0.1, 0.2, 0.1] 
-        }}
-        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full blur-[100px] bg-cyan-500/20" 
+        className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] bg-blue-400/20" 
       />
 
       <motion.div 
@@ -223,22 +214,22 @@ function LoginPage({ onLogin }: { onLogin: (user: UserProfile) => void }) {
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-sm relative z-10"
       >
-        <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl p-8 border border-white/20">
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-500/20">
+        <div className="bg-white/80 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl p-10 border border-white">
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-500/20">
               <ShieldCheck size={40} className="text-white" />
             </div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">RondaDigital</h1>
-            <p className="text-sm font-medium text-slate-500 mt-1">Gestão de Terceiros e Acesso</p>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">RondaDigital</h1>
+            <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">Painel Administrativo</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <Input label="E-mail" type="email" value={email} onChange={setEmail} placeholder="usuario@empresa.com" required />
             
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Input label="Senha" type="password" value={password} onChange={setPassword} placeholder="••••••••" required />
               <div className="flex justify-end">
-                <button type="button" onClick={() => setShowForgot(true)} className="text-[11px] font-bold text-blue-600 hover:text-blue-700 transition-colors uppercase tracking-wider">
+                <button type="button" onClick={() => setShowForgot(true)} className="text-[10px] font-black text-blue-600 hover:text-indigo-700 transition-colors uppercase tracking-widest">
                   Esqueci minha senha
                 </button>
               </div>
@@ -246,23 +237,22 @@ function LoginPage({ onLogin }: { onLogin: (user: UserProfile) => void }) {
 
             {error && (
               <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-                className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+                className="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-[11px] text-red-600 font-medium">
                 <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                 {error}
               </motion.div>
             )}
 
-            <button type="submit" disabled={loading}
-              className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition-all disabled:opacity-60 shadow-lg shadow-blue-500/25 active:scale-95">
-              {loading ? 'Autenticando...' : 'Acessar Sistema'}
-            </button>
+            <div className="pt-2">
+              <button type="submit" disabled={loading}
+                className="w-full py-4 rounded-2xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition-all disabled:opacity-60 shadow-xl shadow-blue-500/25 active:scale-95">
+                {loading ? 'Autenticando...' : 'Entrar no Sistema'}
+              </button>
+            </div>
           </form>
         </div>
-
-        <p className="text-center text-slate-400 text-[10px] mt-8 font-medium uppercase tracking-[0.2em]">
-          Powered by RondaDigital &copy; 2025
-        </p>
       </motion.div>
+
 
       {/* Forgot Password Modal */}
       <AnimatePresence>
@@ -306,12 +296,12 @@ function Header({ profile, onLogout }: { profile: UserProfile; onLogout: () => v
         </div>
       </div>
       
-      <div className="flex items-center gap-4">
-        <div className="hidden sm:flex flex-col items-end mr-2">
-          <p className="text-xs font-bold text-slate-900">{profile.displayName}</p>
-          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{profile.role}</p>
-        </div>
-        <div className="h-8 w-[1px] bg-slate-100 hidden sm:block mx-1" />
+      <div className="flex items-center gap-3">
+        <button className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all relative">
+          <Bell size={20} />
+          <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
+        </button>
+        <div className="h-8 w-[1px] bg-slate-100 mx-1" />
         <button onClick={onLogout} className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all group" title="Sair do sistema">
           <LogOut size={20} className="group-hover:translate-x-0.5 transition-transform" />
         </button>
@@ -342,49 +332,77 @@ function Sidebar({ activeTab, setActiveTab, profile, collapsed, setCollapsed }: 
 
   return (
     <motion.aside 
-      animate={{ width: collapsed ? 0 : 260 }}
+      animate={{ width: collapsed ? 80 : 280 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className="relative h-full bg-slate-900 text-white shrink-0 z-20 group border-r border-white/5"
+      className="relative h-full bg-slate-900 text-white shrink-0 z-20 group border-r border-white/5 shadow-2xl shadow-slate-900/50"
     >
       {/* Collapse toggle (The Bubble) */}
       <button 
         onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-10 z-40 w-7 h-7 rounded-full bg-white border-2 border-slate-900 flex items-center justify-center text-slate-900 hover:bg-blue-600 hover:text-white transition-all shadow-xl"
+        className="absolute -right-3.5 top-10 z-40 w-7 h-7 rounded-full bg-white border-2 border-slate-900 flex items-center justify-center text-slate-900 hover:bg-blue-600 hover:text-white transition-all shadow-xl hover:scale-110 active:scale-90"
       >
         {collapsed ? <ChevronRight size={14} strokeWidth={3} /> : <ChevronLeft size={14} strokeWidth={3} />}
       </button>
 
-      <div className={cn("flex flex-col h-full overflow-hidden transition-opacity duration-300", collapsed ? "opacity-0" : "opacity-100")}>
+      <div className="flex flex-col h-full overflow-hidden">
         {/* Nav */}
-        <nav className="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto">
-          <p className="px-3 mb-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Navegação</p>
+        <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto custom-scrollbar">
+          <p className={cn("px-4 mb-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] transition-opacity duration-300", collapsed ? "opacity-0" : "opacity-100")}>
+            Navegação
+          </p>
           {visible.map(item => (
             <button key={item.id} onClick={() => setActiveTab(item.id)}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-semibold transition-all',
+                'w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-sm font-semibold transition-all relative group/item',
                 activeTab === item.id
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 active:scale-95'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-100',
+                collapsed && 'justify-center'
               )}>
-              <item.icon size={18} className={cn("transition-transform", activeTab === item.id ? "scale-110" : "group-hover:scale-110")} />
-              <span className="truncate">{item.label}</span>
+              <item.icon size={20} className={cn("transition-transform shrink-0", activeTab === item.id ? "scale-110" : "group-hover/item:scale-110")} />
+              
+              {!collapsed && (
+                <motion.span 
+                  initial={{ opacity: 0, x: -10 }} 
+                  animate={{ opacity: 1, x: 0 }}
+                  className="truncate"
+                >
+                  {item.label}
+                </motion.span>
+              )}
+              
+              {collapsed && activeTab === item.id && (
+                <div className="absolute left-0 w-1 h-6 bg-white rounded-r-full" />
+              )}
             </button>
           ))}
         </nav>
 
-        {/* Footer info can stay if minimal */}
-        <div className="p-4 bg-black/20">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-[10px] font-black text-blue-400 border border-white/5">
+        {/* User Footer - Just the name */}
+        <div className="p-4 bg-black/40 border-t border-white/5">
+          <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center text-xs font-black text-blue-400 border border-white/10 shrink-0">
               {profile.displayName?.substring(0,2).toUpperCase()}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-black text-slate-300 truncate uppercase mt-0.5">{profile.displayName}</p>
-            </div>
+            {!collapsed && (
+              <motion.div 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }}
+                className="flex-1 min-w-0"
+              >
+                <p className="text-[11px] font-black text-slate-200 truncate uppercase tracking-wider">
+                  {profile.displayName}
+                </p>
+                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
+                  Conectado
+                </p>
+              </motion.div>
+            )}
           </div>
         </div>
       </div>
     </motion.aside>
+
   );
 }
 
