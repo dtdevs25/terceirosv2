@@ -1,31 +1,29 @@
 FROM node:22-alpine
 
-# Dependências do sistema para compilação de pacotes nativos
-RUN apk add --no-cache python3 make g++
-
 WORKDIR /app
 
-# Copia manifests de dependências primeiro (melhor cache de layers)
+# Copia manifests de dependências
 COPY package*.json ./
 
-# Instala TODAS as dependências (incluindo devDependencies para o build)
+# Instala TODAS as dependências (incluindo devDependencies para o build do Vite)
+# NODE_ENV ainda não é production aqui - garante que devDeps sejam instaladas
 RUN npm ci
 
 # Copia o restante do código-fonte
 COPY . .
 
-# Faz o build do frontend React → dist/
+# Build do frontend React → dist/
+# (usa @tailwindcss/vite e @vitejs/plugin-react que estão em devDependencies)
 RUN npm run build
 
-# Remove devDependencies após o build para reduzir tamanho da imagem
+# Remove devDependencies após o build para reduzir tamanho da imagem final
 RUN npm prune --production
 
-# Porta exposta
-EXPOSE 3000
-
-# Variáveis de ambiente padrão (sobrepor via CapRover app env vars)
+# Variáveis de ambiente padrão (sobrescrever via CapRover env vars)
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Inicia o servidor Node/Express com tsx (suporte a TypeScript em produção)
+EXPOSE 3000
+
+# Inicia o servidor Node/Express com suporte a TypeScript via tsx
 CMD ["npx", "tsx", "server/index.ts"]
