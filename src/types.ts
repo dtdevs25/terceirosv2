@@ -1,28 +1,105 @@
-export type UserRole = 'admin' | 'vigilante';
+export type UserRole = 'master' | 'admin' | 'viewer';
+export type TipoAcesso = 'visitante' | 'prestador';
+export type StatusAcesso = 'liberado' | 'a_vencer' | 'bloqueado';
+
+export interface Company {
+  id: string;
+  name: string;
+  cnpj?: string;
+  isActive: boolean;
+  createdAt: string;
+}
 
 export interface UserProfile {
-  uid: string;
+  id: string;
+  uid?: string; // para compatibilidade de firebase caso reutilizado, ou id real do banco
   email: string;
   displayName: string;
   role: UserRole;
-  isActive?: boolean;
+  companyId?: string;
+  companyName?: string;
+  isActive: boolean;
   createdAt: string;
 }
 
-export interface Location {
+export interface EmpresaTerceiro {
   id: string;
+  companyId: string;
   name: string;
-  description: string;
-  qrValue: string;
+  cnpj?: string;
   createdAt: string;
 }
 
-export interface ScanLog {
+export interface TipoTreinamento {
   id: string;
-  userId: string;
-  userEmail: string;
-  userName: string;
-  locationId: string;
-  locationName: string;
+  nome: string;
+  codigo: string;
+  validadeMeses: number;
+  escopo: 'global' | 'personalizado';
+  companyId?: string; // Null se for global
+  createdAt: string;
+}
+
+export interface TipoAtividade {
+  id: string;
+  companyId: string;
+  nome: string;
+  treinamentosObrigatorios?: string[]; // IDs dos treinamentos retornados na API
+}
+
+export interface TreinamentoPessoa {
+  id?: string;
+  pessoaId: string;
+  treinamentoId: string;
+  treinamentoNome?: string;
+  treinamentoCodigo?: string;
+  dataRealizacao: string; // YYYY-MM-DD
+  dataVencimento: string; // YYYY-MM-DD
+  statusTreinamento?: 'Valido' | 'A Vencer' | 'Vencido';
+}
+
+export interface Pessoa {
+  id: string;
+  companyId: string;
+  tipoAcesso: TipoAcesso;
+  
+  foto?: string; // base64
+  nomeCompleto: string;
+  documento: string;
+  empresaOrigemId?: string;
+  empresaOrigemNome?: string;
+  responsavelInterno: string;
+  
+  celularAutorizado: boolean;
+  notebookAutorizado: boolean;
+  liberadoAte?: string; // Data ISO
+  descricaoAtividade?: string;
+  
+  // Apenas prestador
+  atividadeId?: string;
+  atividadeNome?: string;
+  asoDataRealizacao?: string; // YYYY-MM-DD
+  epiObrigatorio: boolean;
+  epiDescricao?: string;
+
+  // Calculado dinamicamente via back-end
+  statusAcesso?: StatusAcesso;
+  motivoBloqueio?: string[];
+  
+  treinamentos?: TreinamentoPessoa[]; // Arrays agrupados na leitura
+
+  createdBy?: string;
+  createdAt: string;
+}
+
+export interface PresencaLog {
+  id: string;
+  pessoaId: string;
+  pessoaNome?: string;
+  empresaOrigem?: string;
+  companyId?: string;
+  viewerId: string;
+  viewerNome?: string;
+  status: 'entrada' | 'saida';
   timestamp: string;
 }

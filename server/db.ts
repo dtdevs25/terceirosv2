@@ -45,13 +45,13 @@ export async function initDB(): Promise<void> {
     if (parseInt(rows[0].count) === 0) {
       const adminEmail = process.env.ADMIN_EMAIL || 'admin@ehspro.com.br';
       const adminPassword = process.env.ADMIN_PASSWORD || 'RondaAdmin@2025!';
-      const adminName = process.env.ADMIN_NAME || 'Administrador';
+      const adminName = process.env.ADMIN_NAME || 'Master';
       
       const hash = await bcrypt.hash(adminPassword, 12);
       
       await client.query(
         `INSERT INTO users (email, display_name, password_hash, role)
-         VALUES ($1, $2, $3, 'admin')`,
+         VALUES ($1, $2, $3, 'master')`,
         [adminEmail, adminName, hash]
       );
       

@@ -1,2077 +1,1287 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState, useEffect, useRef } from 'react';
-import { UserProfile, Location, ScanLog, UserRole } from './types';
-import { cn } from './lib/utils';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api, getStoredUser, saveSession, clearSession } from './api';
-import { 
-  LogOut, 
-  QrCode, 
-  Users, 
-  MapPin, 
-  History, 
-  Plus, 
-  Trash2, 
-  Download, 
-  Camera, 
-  CheckCircle2, 
-  AlertCircle,
-  Menu,
-  X,
-  ChevronRight,
-  ChevronLeft,
-  ShieldCheck,
-  Search,
-  Filter,
-  Calendar as CalendarIcon,
-  UserPlus,
-  LayoutGrid,
-  List,
-  Edit2,
-  Eye,
-  EyeOff
+import type {
+  UserProfile, Company, EmpresaTerceiro, TipoTreinamento,
+  TipoAtividade, Pessoa, PresencaLog, TreinamentoPessoa, StatusAcesso
+} from './types';
+import {
+  LogOut, Users, Building2, ShieldCheck, ClipboardList, Settings,
+  Plus, Trash2, Pencil, Eye, EyeOff, Search, ChevronLeft, ChevronRight,
+  Menu, X, AlertTriangle, CheckCircle2, XCircle, Clock, Camera,
+  Upload, ArrowRightCircle, ArrowLeftCircle, RefreshCw, BookOpen,
+  Briefcase, UserCog, Bell, Home
 } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
-import { format } from 'date-fns';
+import { format, parseISO, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 
-// --- Components ---
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-const Button = ({ 
-  children, 
-  onClick, 
-  variant = 'primary', 
-  className, 
-  disabled,
-  type = 'button'
-}: { 
-  children: React.ReactNode; 
-  onClick?: () => void; 
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost'; 
-  className?: string;
-  disabled?: boolean;
-  type?: 'button' | 'submit' | 'reset';
-}) => {
-  const variants = {
-    primary: 'bg-primary text-white hover:bg-primary/90 shadow-md shadow-primary/20',
-    secondary: 'bg-secondary text-white hover:bg-secondary/90 shadow-md shadow-secondary/20',
-    danger: 'bg-red-600 text-white hover:bg-red-700',
-    ghost: 'bg-transparent text-gray-600 hover:bg-gray-100'
-  };
+function cn(...classes: (string | boolean | undefined | null)[]): string {
+  return classes.filter(Boolean).join(' ');
+}
+
+function fmtDate(d?: string | null) {
+  if (!d) return '—';
+  try {
+    const parsed = parseISO(d);
+    return isValid(parsed) ? format(parsed, 'dd/MM/yyyy', { locale: ptBR }) : '—';
+  } catch { return '—'; }
+}
+
+function statusLabel(s?: StatusAcesso) {
+  if (s === 'liberado') return 'Acesso Liberado';
+  if (s === 'a_vencer') return 'A Vencer';
+  if (s === 'bloqueado') return 'Acesso Bloqueado';
+  return '—';
+}
+
+function StatusBadge({ status }: { status?: StatusAcesso }) {
+  const cfg = {
+    liberado: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Liberado' },
+    a_vencer: { bg: 'bg-amber-100',   text: 'text-amber-700',   dot: 'bg-amber-500',   label: 'A Vencer' },
+    bloqueado:{ bg: 'bg-red-100',     text: 'text-red-700',     dot: 'bg-red-500',      label: 'Bloqueado' },
+  }[status ?? 'liberado'] ?? { bg: 'bg-gray-100', text: 'text-gray-500', dot: 'bg-gray-400', label: '—' };
 
   return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        'px-4 py-2 rounded-lg font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed',
-        variants[variant],
-        className
-      )}
-    >
+    <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold', cfg.bg, cfg.text)}>
+      <span className={cn('w-2 h-2 rounded-full', cfg.dot)} />
+      {cfg.label}
+    </span>
+  );
+}
+
+// ─── UI Primitives ───────────────────────────────────────────────────────────
+
+function Button({ children, onClick, variant = 'primary', className, disabled, type = 'button', size = 'md' }: {
+  children: React.ReactNode; onClick?: () => void;
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'success';
+  className?: string; disabled?: boolean; type?: 'button' | 'submit' | 'reset'; size?: 'sm' | 'md';
+}) {
+  const v = {
+    primary:   'bg-blue-600 text-white hover:bg-blue-700 shadow-sm',
+    secondary: 'bg-slate-700 text-white hover:bg-slate-800 shadow-sm',
+    danger:    'bg-red-600 text-white hover:bg-red-700 shadow-sm',
+    success:   'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
+    ghost:     'bg-transparent text-slate-600 hover:bg-slate-100',
+  }[variant];
+  const s = size === 'sm' ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm';
+  return (
+    <button type={type} onClick={onClick} disabled={disabled}
+      className={cn('rounded-lg font-medium transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed', v, s, className)}>
       {children}
     </button>
   );
+}
+
+function Input({ label, value, onChange, type = 'text', placeholder, required, hint }: {
+  label: string; value: string; onChange: (v: string) => void;
+  type?: string; placeholder?: string; required?: boolean; hint?: string;
+}) {
+  const [show, setShow] = useState(false);
+  const inputType = type === 'password' ? (show ? 'text' : 'password') : type;
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>
+      <div className="relative">
+        <input type={inputType} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required}
+          className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-slate-400" />
+        {type === 'password' && (
+          <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+            {show ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        )}
+      </div>
+      {hint && <p className="text-xs text-slate-400">{hint}</p>}
+    </div>
+  );
+}
+
+function Select({ label, value, onChange, children, required }: {
+  label: string; value: string; onChange: (v: string) => void;
+  children: React.ReactNode; required?: boolean;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>
+      <select value={value} onChange={e => onChange(e.target.value)} required={required}
+        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        {children}
+      </select>
+    </div>
+  );
+}
+
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center justify-between cursor-pointer gap-3">
+      <span className="text-sm text-slate-700">{label}</span>
+      <div onClick={() => onChange(!checked)} className={cn('relative w-10 h-6 rounded-full transition-colors', checked ? 'bg-blue-600' : 'bg-slate-200')}>
+        <div className={cn('absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all', checked ? 'left-5' : 'left-1')} />
+      </div>
+    </label>
+  );
+}
+
+function Modal({ title, onClose, children, size = 'md' }: {
+  title: string; onClose: () => void; children: React.ReactNode; size?: 'md' | 'lg' | 'xl';
+}) {
+  const widths = { md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-4xl' };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+        onClick={e => e.stopPropagation()}
+        className={cn('bg-white rounded-2xl shadow-2xl w-full max-h-[90vh] overflow-y-auto', widths[size])}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+          <h2 className="text-base font-bold text-slate-900">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><X size={18} /></button>
+        </div>
+        <div className="px-6 py-5">{children}</div>
+      </motion.div>
+    </div>
+  );
+}
+
+function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn('bg-white rounded-2xl border border-slate-100 shadow-sm', className)}>{children}</div>;
+}
+
+function EmptyState({ icon: Icon, title, subtitle }: { icon: any; title: string; subtitle?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+      <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mb-4">
+        <Icon size={24} className="text-slate-400" />
+      </div>
+      <p className="font-semibold text-slate-600 mb-1">{title}</p>
+      {subtitle && <p className="text-sm text-slate-400">{subtitle}</p>}
+    </div>
+  );
+}
+
+// ─── Login ───────────────────────────────────────────────────────────────────
+
+function LoginPage({ onLogin }: { onLogin: (user: UserProfile) => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await api.post<{ token: string; user: UserProfile }>('/auth/login', { email, password });
+      saveSession(data.token, data.user);
+      onLogin(data.user);
+    } catch (err: any) {
+      setError(err.error || 'E-mail ou senha incorretos.');
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%)' }}>
+      {/* Background glows */}
+      <div className="absolute top-20 left-20 w-96 h-96 rounded-full opacity-20 blur-3xl" style={{ background: 'radial-gradient(circle, #3b82f6, transparent)' }} />
+      <div className="absolute bottom-20 right-20 w-72 h-72 rounded-full opacity-10 blur-3xl" style={{ background: 'radial-gradient(circle, #06b6d4, transparent)' }} />
+
+      <motion.div initial={{ opacity: 0, y: 32 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm relative z-10">
+        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <ShieldCheck size={32} className="text-white" />
+            </div>
+            <h1 className="text-xl font-bold text-slate-900">Gestão de Terceiros</h1>
+            <p className="text-sm text-slate-500 mt-1">Controle de Acesso Industrial</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Input label="E-mail" type="email" value={email} onChange={setEmail} placeholder="usuario@empresa.com" required />
+            <Input label="Senha" type="password" value={password} onChange={setPassword} placeholder="••••••••" required />
+
+            {error && (
+              <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                {error}
+              </div>
+            )}
+
+            <button type="submit" disabled={loading}
+              className="w-full py-3 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 transition-all disabled:opacity-60 shadow-lg shadow-blue-500/30">
+              {loading ? 'Entrando...' : 'Entrar no Sistema'}
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Sidebar ─────────────────────────────────────────────────────────────────
+
+type TabId = 'portaria' | 'pessoas' | 'empresas_terceiro' | 'treinamentos' | 'atividades' | 'companies' | 'usuarios';
+
+function Sidebar({ activeTab, setActiveTab, profile, collapsed, setCollapsed, onLogout }: {
+  activeTab: TabId; setActiveTab: (t: TabId) => void;
+  profile: UserProfile; collapsed: boolean; setCollapsed: (v: boolean) => void;
+  onLogout: () => void;
+}) {
+  const items: { id: TabId; label: string; icon: any; roles: string[] }[] = [
+    { id: 'portaria',        label: 'Portaria',           icon: Home,        roles: ['master','admin','viewer'] },
+    { id: 'pessoas',         label: 'Visitantes e Prestadores', icon: Users, roles: ['master','admin'] },
+    { id: 'empresas_terceiro',label:'Empresas de Origem', icon: Building2,   roles: ['master','admin'] },
+    { id: 'treinamentos',    label: 'Tipos de Treinamento',icon: BookOpen,   roles: ['master','admin'] },
+    { id: 'atividades',      label: 'Tipos de Atividade', icon: Briefcase,   roles: ['master','admin'] },
+    { id: 'companies',       label: 'Companhias',         icon: ShieldCheck, roles: ['master'] },
+    { id: 'usuarios',        label: 'Usuários',           icon: UserCog,     roles: ['master','admin'] },
+  ];
+
+  const visible = items.filter(i => i.roles.includes(profile.role));
+
+  return (
+    <motion.aside animate={{ width: collapsed ? 72 : 256 }}
+      className="hidden md:flex flex-col bg-slate-900 text-white shrink-0 overflow-hidden relative">
+      {/* Collapse toggle */}
+      <button onClick={() => setCollapsed(!collapsed)}
+        className="absolute -right-3 top-7 z-20 w-6 h-6 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-300 hover:bg-slate-600 transition-colors">
+        {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+      </button>
+
+      {/* Logo */}
+      <div className={cn('px-4 py-5 border-b border-white/10 flex items-center gap-3', collapsed && 'justify-center px-0')}>
+        <div className="w-9 h-9 shrink-0 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg">
+          <ShieldCheck size={20} className="text-white" />
+        </div>
+        {!collapsed && (
+          <div>
+            <p className="font-bold text-sm leading-tight">Gestão de</p>
+            <p className="font-bold text-sm leading-tight text-blue-400">Terceiros</p>
+          </div>
+        )}
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+        {visible.map(item => (
+          <button key={item.id} onClick={() => setActiveTab(item.id)}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group',
+              activeTab === item.id
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30'
+                : 'text-slate-400 hover:bg-white/10 hover:text-white',
+              collapsed && 'justify-center px-0'
+            )}>
+            <item.icon size={20} className="shrink-0" />
+            {!collapsed && <span className="truncate">{item.label}</span>}
+          </button>
+        ))}
+      </nav>
+
+      {/* User */}
+      <div className={cn('px-3 py-4 border-t border-white/10', collapsed && 'flex justify-center')}>
+        {collapsed ? (
+          <button onClick={onLogout} className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10">
+            <LogOut size={18} />
+          </button>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-slate-700 flex items-center justify-center text-sm font-bold text-white shrink-0">
+              {profile.displayName?.[0]?.toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-white truncate">{profile.displayName}</p>
+              <p className="text-xs text-slate-400 capitalize">{profile.role}{profile.companyName ? ` · ${profile.companyName}` : ''}</p>
+            </div>
+            <button onClick={onLogout} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
+              <LogOut size={16} />
+            </button>
+          </div>
+        )}
+      </div>
+    </motion.aside>
+  );
+}
+
+// ─── Portaria (Viewer) ────────────────────────────────────────────────────────
+
+function PortariaView({ profile }: { profile: UserProfile }) {
+  const [pessoas, setPessoas] = useState<Pessoa[]>([]);
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Pessoa | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  useEffect(() => { fetchPessoas(); }, []);
+
+  const fetchPessoas = async () => {
+    try { setPessoas(await api.get<Pessoa[]>('/pessoas')); } catch {}
+  };
+
+  const filtered = pessoas.filter(p =>
+    p.nomeCompleto.toLowerCase().includes(search.toLowerCase()) ||
+    (p.empresaOrigemNome || '').toLowerCase().includes(search.toLowerCase())
+  );
+
+  const handleRegistrar = async (pessoaId: string, status: 'entrada' | 'saida') => {
+    setActionLoading(true);
+    try {
+      await api.post('/presencas', { pessoaId, status });
+      setSelected(null);
+      fetchPessoas();
+    } catch (err: any) {
+      alert(err.error || 'Erro ao registrar.');
+    } finally { setActionLoading(false); }
+  };
+
+  const statusCount = {
+    liberado:  pessoas.filter(p => p.statusAcesso === 'liberado').length,
+    a_vencer:  pessoas.filter(p => p.statusAcesso === 'a_vencer').length,
+    bloqueado: pessoas.filter(p => p.statusAcesso === 'bloqueado').length,
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Portaria</h1>
+        <p className="text-sm text-slate-500 mt-1">Registre a entrada e saída de visitantes e prestadores.</p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4">
+        {([
+          { label: 'Liberados', count: statusCount.liberado, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+          { label: 'A Vencer',  count: statusCount.a_vencer,  color: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-200' },
+          { label: 'Bloqueados',count: statusCount.bloqueado, color: 'text-red-600',     bg: 'bg-red-50',     border: 'border-red-200' },
+        ]).map(s => (
+          <Card key={s.label} className={cn('p-4 border', s.border, s.bg)}>
+            <p className={cn('text-3xl font-black', s.color)}>{s.count}</p>
+            <p className={cn('text-sm font-medium mt-0.5', s.color)}>{s.label}</p>
+          </Card>
+        ))}
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nome ou empresa..."
+          className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+      </div>
+
+      {/* List */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filtered.map(p => (
+          <button key={p.id} onClick={() => setSelected(p)}
+            className={cn(
+              'bg-white rounded-2xl border-2 p-4 text-left transition-all hover:shadow-md hover:-translate-y-0.5',
+              p.statusAcesso === 'liberado'  ? 'border-emerald-200 hover:border-emerald-400' :
+              p.statusAcesso === 'a_vencer'  ? 'border-amber-200 hover:border-amber-400' :
+                                               'border-red-200 hover:border-red-400'
+            )}>
+            <div className="flex items-center gap-3 mb-3">
+              {p.foto ? (
+                <img src={p.foto} alt={p.nomeCompleto} className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow" />
+              ) : (
+                <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold text-white',
+                  p.statusAcesso === 'liberado' ? 'bg-emerald-500' : p.statusAcesso === 'a_vencer' ? 'bg-amber-500' : 'bg-red-500')}>
+                  {p.nomeCompleto[0]}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-slate-900 text-sm truncate">{p.nomeCompleto}</p>
+                <p className="text-xs text-slate-500 truncate">{p.empresaOrigemNome || '—'}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <StatusBadge status={p.statusAcesso} />
+              <span className="text-xs text-slate-400 capitalize bg-slate-50 px-2 py-0.5 rounded-full">{p.tipoAcesso}</span>
+            </div>
+          </button>
+        ))}
+        {filtered.length === 0 && (
+          <div className="col-span-full">
+            <EmptyState icon={Users} title="Nenhum registro encontrado" subtitle="Tente buscar por outro nome ou empresa." />
+          </div>
+        )}
+      </div>
+
+      {/* Detail Modal */}
+      <AnimatePresence>
+        {selected && (
+          <Modal title="Detalhes do Acesso" onClose={() => setSelected(null)} size="lg">
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center gap-4">
+                {selected.foto ? (
+                  <img src={selected.foto} alt="" className="w-20 h-20 rounded-2xl object-cover border-2 border-slate-200" />
+                ) : (
+                  <div className={cn('w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-bold text-white',
+                    selected.statusAcesso === 'liberado' ? 'bg-emerald-500' : selected.statusAcesso === 'a_vencer' ? 'bg-amber-500' : 'bg-red-500')}>
+                    {selected.nomeCompleto[0]}
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">{selected.nomeCompleto}</h3>
+                  <p className="text-sm text-slate-500">{selected.empresaOrigemNome || 'Empresa não informada'}</p>
+                  <div className="mt-2"><StatusBadge status={selected.statusAcesso} /></div>
+                </div>
+              </div>
+
+              {/* Info Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'Tipo de Acesso', value: selected.tipoAcesso === 'visitante' ? 'Visitante' : 'Prestador de Serviço' },
+                  { label: 'Documento', value: selected.documento },
+                  { label: 'Responsável Interno', value: selected.responsavelInterno },
+                  { label: 'Liberado Até', value: fmtDate(selected.liberadoAte) },
+                  { label: 'Celular Autorizado', value: selected.celularAutorizado ? 'Sim' : 'Não' },
+                  { label: 'Notebook Autorizado', value: selected.notebookAutorizado ? 'Sim' : 'Não' },
+                  ...(selected.tipoAcesso === 'prestador' ? [
+                    { label: 'ASO', value: fmtDate(selected.asoDataRealizacao) },
+                    { label: 'EPI Obrigatório', value: selected.epiObrigatorio ? `Sim — ${selected.epiDescricao || ''}` : 'Não' },
+                    { label: 'Atividade', value: selected.atividadeNome || '—' },
+                  ] : []),
+                ].map(({ label, value }) => (
+                  <div key={label} className="bg-slate-50 rounded-xl p-3">
+                    <p className="text-xs text-slate-400 font-medium">{label}</p>
+                    <p className="text-sm font-semibold text-slate-800 mt-0.5">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Treinamentos */}
+              {selected.tipoAcesso === 'prestador' && selected.treinamentos && selected.treinamentos.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Treinamentos</h4>
+                  <div className="space-y-2">
+                    {selected.treinamentos.map((t, i) => {
+                      const st = t.statusTreinamento;
+                      const col = st === 'Valido' ? 'text-emerald-600 bg-emerald-50' : st === 'Vencido' ? 'text-red-600 bg-red-50' : 'text-amber-600 bg-amber-50';
+                      return (
+                        <div key={i} className="flex items-center justify-between py-2 px-3 rounded-xl bg-slate-50">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">{t.treinamentoNome}</p>
+                            <p className="text-xs text-slate-400">Vence em: {fmtDate(t.dataVencimento)}</p>
+                          </div>
+                          <span className={cn('text-xs font-bold px-2.5 py-1 rounded-full', col)}>{st}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Ações */}
+              <div className="flex gap-3 pt-2">
+                <Button variant="success" className="flex-1" disabled={actionLoading || selected.statusAcesso === 'bloqueado'}
+                  onClick={() => handleRegistrar(selected.id, 'entrada')}>
+                  <ArrowRightCircle size={18} /> Registrar Entrada
+                </Button>
+                <Button variant="danger" className="flex-1" disabled={actionLoading}
+                  onClick={() => handleRegistrar(selected.id, 'saida')}>
+                  <ArrowLeftCircle size={18} /> Registrar Saída
+                </Button>
+              </div>
+              {selected.statusAcesso === 'bloqueado' && (
+                <p className="text-xs text-red-600 text-center font-semibold">⚠️ Acesso bloqueado — entrada não permitida.</p>
+              )}
+            </div>
+          </Modal>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Foto Uploader ────────────────────────────────────────────────────────────
+
+function PhotoPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => onChange(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Foto</label>
+      <div className="flex gap-3 items-end">
+        <div className={cn('w-24 h-24 rounded-2xl border-2 border-dashed flex items-center justify-center overflow-hidden',
+          value ? 'border-blue-400' : 'border-slate-300 bg-slate-50')}>
+          {value ? <img src={value} alt="foto" className="w-full h-full object-cover" /> : <Camera size={24} className="text-slate-400" />}
+        </div>
+        <div className="space-y-2">
+          <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
+            <Upload size={14} /> Carregar arquivo
+          </Button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Pessoas (Admin) ──────────────────────────────────────────────────────────
+
+type PessoaForm = {
+  tipoAcesso: string; foto: string; nomeCompleto: string; documento: string;
+  empresaOrigemId: string; responsavelInterno: string; celularAutorizado: boolean;
+  notebookAutorizado: boolean; liberadoAte: string; descricaoAtividade: string;
+  atividadeId: string; asoDataRealizacao: string; epiObrigatorio: boolean; epiDescricao: string;
+  treinamentos: { treinamentoId: string; dataRealizacao: string }[];
 };
 
-const Card = ({ children, className }: { children: React.ReactNode; className?: string; key?: React.Key }) => (
-  <div className={cn('bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden', className)}>
-    {children}
-  </div>
-);
+const emptyPessoaForm = (): PessoaForm => ({
+  tipoAcesso: 'visitante', foto: '', nomeCompleto: '', documento: '',
+  empresaOrigemId: '', responsavelInterno: '', celularAutorizado: false,
+  notebookAutorizado: false, liberadoAte: '', descricaoAtividade: '',
+  atividadeId: '', asoDataRealizacao: '', epiObrigatorio: false, epiDescricao: '',
+  treinamentos: [],
+});
 
-const Input = ({ 
-  label, 
-  value, 
-  onChange, 
-  type = 'text', 
-  placeholder,
-  required = false,
-  theme = 'light',
-  rightElement
-}: { 
-  label: string; 
-  value: string; 
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; 
-  type?: string;
-  placeholder?: string;
-  required?: boolean;
-  theme?: 'light' | 'glass';
-  rightElement?: React.ReactNode;
-}) => (
-  <div className="space-y-1.5 relative">
-    <label className={cn("text-sm font-bold ml-1", theme === 'glass' ? "text-white/90" : "text-gray-700")}>{label}</label>
-    <div className="relative">
-      <input
-        type={type}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        required={required}
-        className={cn(
-          "w-full py-3 rounded-2xl outline-none transition-all font-medium",
-          rightElement ? "px-4 pr-12" : "px-4",
-          theme === 'glass' 
-            ? "bg-white/5 border border-white/20 text-white placeholder:text-white/40 focus:ring-2 focus:ring-white/30 focus:border-white/40"
-            : "bg-gray-50 border border-gray-100 text-gray-900 focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-gray-400"
-        )}
-      />
-      {rightElement && (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors">
-          {rightElement}
+function PessoasView({ profile }: { profile: UserProfile }) {
+  const [pessoas, setPessoas] = useState<Pessoa[]>([]);
+  const [empresasTerceiro, setEmpresasTerceiro] = useState<EmpresaTerceiro[]>([]);
+  const [atividades, setAtividades] = useState<TipoAtividade[]>([]);
+  const [treiTipos, setTreiTipos] = useState<TipoTreinamento[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editTarget, setEditTarget] = useState<Pessoa | null>(null);
+  const [form, setForm] = useState<PessoaForm>(emptyPessoaForm());
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+
+  useEffect(() => { fetchAll(); }, []);
+
+  const fetchAll = async () => {
+    try {
+      const [p, e, a, t] = await Promise.all([
+        api.get<Pessoa[]>('/pessoas'),
+        api.get<EmpresaTerceiro[]>('/empresas-terceiro'),
+        api.get<TipoAtividade[]>('/treinamentos/atividades'),
+        api.get<TipoTreinamento[]>('/treinamentos/tipos'),
+      ]);
+      setPessoas(p || []);
+      setEmpresasTerceiro(e || []);
+      setAtividades(a || []);
+      setTreiTipos(t || []);
+    } catch {}
+  };
+
+  const openNew = () => { setForm(emptyPessoaForm()); setEditTarget(null); setShowForm(true); };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/pessoas', form);
+      setShowForm(false);
+      fetchAll();
+    } catch (err: any) { alert(err.error || 'Erro ao salvar.'); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Deseja excluir este cadastro?')) return;
+    try { await api.delete(`/pessoas/${id}`); fetchAll(); } catch (err: any) { alert(err.error || 'Erro.'); }
+  };
+
+  const addTreinamento = () => setForm(f => ({ ...f, treinamentos: [...f.treinamentos, { treinamentoId: '', dataRealizacao: '' }] }));
+  const updateTreinamento = (i: number, field: string, val: string) => {
+    setForm(f => ({ ...f, treinamentos: f.treinamentos.map((t, idx) => idx === i ? { ...t, [field]: val } : t) }));
+  };
+  const removeTreinamento = (i: number) => setForm(f => ({ ...f, treinamentos: f.treinamentos.filter((_, idx) => idx !== i) }));
+
+  const filtered = pessoas
+    .filter(p => !search || p.nomeCompleto.toLowerCase().includes(search.toLowerCase()) || (p.empresaOrigemNome || '').toLowerCase().includes(search.toLowerCase()))
+    .filter(p => !filterStatus || p.statusAcesso === filterStatus);
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Visitantes e Prestadores</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Cadastre e gerencie os acessos da sua empresa.</p>
         </div>
-      )}
-    </div>
-  </div>
-);
+        <Button onClick={openNew}><Plus size={16} /> Novo Cadastro</Button>
+      </div>
 
-// --- Main App ---
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-48">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar..."
+            className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white outline-none">
+          <option value="">Todos os status</option>
+          <option value="liberado">Liberado</option>
+          <option value="a_vencer">A Vencer</option>
+          <option value="bloqueado">Bloqueado</option>
+        </select>
+      </div>
+
+      {/* Table */}
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-100">
+                <th className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Pessoa</th>
+                <th className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Tipo</th>
+                <th className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Empresa Origem</th>
+                <th className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Liberado Até</th>
+                <th className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {filtered.map(p => (
+                <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      {p.foto ? <img src={p.foto} className="w-9 h-9 rounded-lg object-cover" alt="" />
+                        : <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-600">{p.nomeCompleto[0]}</div>}
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{p.nomeCompleto}</p>
+                        <p className="text-xs text-slate-400">{p.documento}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3"><span className="text-xs capitalize bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">{p.tipoAcesso}</span></td>
+                  <td className="px-4 py-3 text-sm text-slate-600">{p.empresaOrigemNome || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600">{fmtDate(p.liberadoAte)}</td>
+                  <td className="px-4 py-3"><StatusBadge status={p.statusAcesso} /></td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(p.id)}><Trash2 size={14} /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filtered.length === 0 && <EmptyState icon={Users} title="Nenhum registro encontrado" />}
+        </div>
+      </Card>
+
+      {/* Form Modal */}
+      <AnimatePresence>
+        {showForm && (
+          <Modal title={editTarget ? 'Editar Cadastro' : 'Novo Cadastro'} onClose={() => setShowForm(false)} size="xl">
+            <form onSubmit={handleSave} className="space-y-6">
+              {/* Tipo + Foto */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <PhotoPicker value={form.foto} onChange={v => setForm(f => ({ ...f, foto: v }))} />
+                <Select label="Tipo de Acesso" value={form.tipoAcesso} onChange={v => setForm(f => ({ ...f, tipoAcesso: v }))} required>
+                  <option value="visitante">Visitante</option>
+                  <option value="prestador">Prestador de Serviço</option>
+                </Select>
+              </div>
+
+              {/* Dados Principais */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="Nome Completo" value={form.nomeCompleto} onChange={v => setForm(f => ({ ...f, nomeCompleto: v }))} required placeholder="Nome completo" />
+                <Input label="RG ou CPF" value={form.documento} onChange={v => setForm(f => ({ ...f, documento: v }))} required placeholder="000.000.000-00" />
+                <Select label="Empresa de Origem" value={form.empresaOrigemId} onChange={v => setForm(f => ({ ...f, empresaOrigemId: v }))}>
+                  <option value="">— Selecione —</option>
+                  {empresasTerceiro.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </Select>
+                <Input label="Responsável Interno" value={form.responsavelInterno} onChange={v => setForm(f => ({ ...f, responsavelInterno: v }))} required placeholder="Nome do acompanhante" />
+                <Input label="Liberado Até" type="date" value={form.liberadoAte} onChange={v => setForm(f => ({ ...f, liberadoAte: v }))} />
+                <Input label="Descrição da Atividade / Visita" value={form.descricaoAtividade} onChange={v => setForm(f => ({ ...f, descricaoAtividade: v }))} placeholder="Descreva o motivo do acesso" />
+              </div>
+
+              {/* Permissões */}
+              <div className="p-4 bg-slate-50 rounded-2xl space-y-3">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Permissões de Acesso</h4>
+                <Toggle label="Celular autorizado" checked={form.celularAutorizado} onChange={v => setForm(f => ({ ...f, celularAutorizado: v }))} />
+                <Toggle label="Notebook autorizado" checked={form.notebookAutorizado} onChange={v => setForm(f => ({ ...f, notebookAutorizado: v }))} />
+              </div>
+
+              {/* Prestador específico */}
+              {form.tipoAcesso === 'prestador' && (
+                <div className="space-y-4 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                  <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider">Dados do Prestador</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Select label="Tipo de Atividade" value={form.atividadeId} onChange={v => setForm(f => ({ ...f, atividadeId: v }))}>
+                      <option value="">— Selecione —</option>
+                      {atividades.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+                    </Select>
+                    <Input label="ASO — Data de Realização" type="date" value={form.asoDataRealizacao} onChange={v => setForm(f => ({ ...f, asoDataRealizacao: v }))} />
+                  </div>
+                  <Toggle label="EPI obrigatório" checked={form.epiObrigatorio} onChange={v => setForm(f => ({ ...f, epiObrigatorio: v }))} />
+                  {form.epiObrigatorio && (
+                    <Input label="Descrição do EPI" value={form.epiDescricao} onChange={v => setForm(f => ({ ...f, epiDescricao: v }))} placeholder="Ex: Bota de segurança, capacete..." />
+                  )}
+                  {/* Treinamentos */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="text-xs font-bold text-blue-600 uppercase tracking-wider">Treinamentos</h5>
+                      <Button variant="ghost" size="sm" onClick={addTreinamento}><Plus size={14} /> Adicionar</Button>
+                    </div>
+                    <div className="space-y-2">
+                      {form.treinamentos.map((t, i) => (
+                        <div key={i} className="flex gap-2 items-end">
+                          <div className="flex-1">
+                            <Select label="" value={t.treinamentoId} onChange={v => updateTreinamento(i, 'treinamentoId', v)}>
+                              <option value="">— Tipo —</option>
+                              {treiTipos.map(tt => <option key={tt.id} value={tt.id}>{tt.codigo} — {tt.nome}</option>)}
+                            </Select>
+                          </div>
+                          <div className="flex-1">
+                            <Input label="" type="date" value={t.dataRealizacao} onChange={v => updateTreinamento(i, 'dataRealizacao', v)} />
+                          </div>
+                          <Button variant="ghost" size="sm" onClick={() => removeTreinamento(i)}><X size={14} /></Button>
+                        </div>
+                      ))}
+                      {form.treinamentos.length === 0 && <p className="text-xs text-slate-400 italic">Nenhum treinamento adicionado.</p>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar Cadastro'}</Button>
+              </div>
+            </form>
+          </Modal>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Generic CRUD View ─────────────────────────────────────────────────────────
+
+function SimpleListView<T extends { id: string; name?: string; nome?: string }>({
+  title, subtitle, endpoint, columns, renderForm, icon: Icon
+}: {
+  title: string; subtitle: string; endpoint: string;
+  columns: { label: string; render: (item: T) => React.ReactNode }[];
+  renderForm: (item: T | null, onSave: () => void, onClose: () => void) => React.ReactNode;
+  icon: any;
+}) {
+  const [items, setItems] = useState<T[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState<T | null>(null);
+
+  useEffect(() => { fetchAll(); }, []);
+  const fetchAll = async () => { try { setItems(await api.get<T[]>(endpoint)); } catch {} };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Deseja excluir este item?')) return;
+    try { await api.delete(`${endpoint}/${id}`); fetchAll(); } catch (err: any) { alert(err.error || 'Erro.'); }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>
+        </div>
+        <Button onClick={() => { setEditItem(null); setShowForm(true); }}><Plus size={16} /> Novo</Button>
+      </div>
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-100">
+                {columns.map(c => <th key={c.label} className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">{c.label}</th>)}
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {items.map(item => (
+                <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                  {columns.map((c, i) => <td key={i} className="px-4 py-3 text-sm text-slate-700">{c.render(item)}</td>)}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => { setEditItem(item); setShowForm(true); }}><Pencil size={14} /></Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(item.id)}><Trash2 size={14} /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {items.length === 0 && <EmptyState icon={Icon} title="Nenhum item cadastrado" subtitle="Clique em Novo para adicionar." />}
+        </div>
+      </Card>
+      <AnimatePresence>
+        {showForm && (
+          <Modal title={editItem ? 'Editar' : 'Novo'} onClose={() => setShowForm(false)}>
+            {renderForm(editItem, () => { fetchAll(); setShowForm(false); }, () => setShowForm(false))}
+          </Modal>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Empresas Terceiro View ──────────────────────────────────────────────────
+
+function EmpresasTerceiroView({ profile }: { profile: UserProfile }) {
+  const EmpresaForm = ({ item, onSave, onClose }: { item: EmpresaTerceiro | null; onSave: () => void; onClose: () => void }) => {
+    const [name, setName] = useState(item?.name || '');
+    const [cnpj, setCnpj] = useState(item?.cnpj || '');
+    const [saving, setSaving] = useState(false);
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault(); setSaving(true);
+      try {
+        if (item) await api.put(`/empresas-terceiro/${item.id}`, { name, cnpj });
+        else await api.post('/empresas-terceiro', { name, cnpj });
+        onSave();
+      } catch (err: any) { alert(err.error || 'Erro.'); } finally { setSaving(false); }
+    };
+    return (
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input label="Nome da Empresa" value={name} onChange={setName} required />
+        <Input label="CNPJ" value={cnpj} onChange={setCnpj} placeholder="00.000.000/0000-00" />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar'}</Button>
+        </div>
+      </form>
+    );
+  };
+  return (
+    <SimpleListView<EmpresaTerceiro>
+      title="Empresas de Origem" subtitle="Gerencie as empresas dos visitantes e prestadores."
+      endpoint="/empresas-terceiro" icon={Building2}
+      columns={[
+        { label: 'Nome', render: e => <span className="font-medium">{e.name}</span> },
+        { label: 'CNPJ', render: e => e.cnpj || '—' },
+      ]}
+      renderForm={(item, onSave, onClose) => <EmpresaForm item={item as any} onSave={onSave} onClose={onClose} />}
+    />
+  );
+}
+
+// ─── Treinamentos View ────────────────────────────────────────────────────────
+
+function TreinamentosView({ profile }: { profile: UserProfile }) {
+  const [items, setItems] = useState<TipoTreinamento[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ nome: '', codigo: '', validadeMeses: '12', escopo: 'personalizado' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { fetchAll(); }, []);
+  const fetchAll = async () => { try { setItems(await api.get<TipoTreinamento[]>('/treinamentos/tipos')); } catch {} };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault(); setSaving(true);
+    try { await api.post('/treinamentos/tipos', form); fetchAll(); setShowForm(false); setForm({ nome: '', codigo: '', validadeMeses: '12', escopo: 'personalizado' }); }
+    catch (err: any) { alert(err.error || 'Erro.'); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Tipos de Treinamento</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Defina os treinamentos e suas validades em meses.</p>
+        </div>
+        <Button onClick={() => setShowForm(true)}><Plus size={16} /> Novo</Button>
+      </div>
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-100">
+                {['Código', 'Nome', 'Validade', 'Escopo'].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {items.map(t => (
+                <tr key={t.id} className="hover:bg-slate-50/50">
+                  <td className="px-4 py-3 font-mono text-sm font-bold text-blue-600">{t.codigo}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-slate-900">{t.nome}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600">{t.validadeMeses} meses</td>
+                  <td className="px-4 py-3">
+                    <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', t.escopo === 'global' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600')}>
+                      {t.escopo === 'global' ? 'Global' : 'Personalizado'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {items.length === 0 && <EmptyState icon={BookOpen} title="Nenhum treinamento cadastrado" />}
+        </div>
+      </Card>
+      <AnimatePresence>
+        {showForm && (
+          <Modal title="Novo Tipo de Treinamento" onClose={() => setShowForm(false)}>
+            <form onSubmit={handleSave} className="space-y-4">
+              <Input label="Nome" value={form.nome} onChange={v => setForm(f => ({ ...f, nome: v }))} required placeholder="Ex: Trabalho em Altura" />
+              <Input label="Código" value={form.codigo} onChange={v => setForm(f => ({ ...f, codigo: v }))} required placeholder="Ex: NR35" />
+              <Input label="Validade (meses)" type="number" value={form.validadeMeses} onChange={v => setForm(f => ({ ...f, validadeMeses: v }))} required />
+              {profile.role === 'master' && (
+                <Select label="Escopo" value={form.escopo} onChange={v => setForm(f => ({ ...f, escopo: v }))}>
+                  <option value="personalizado">Personalizado (apenas esta empresa)</option>
+                  <option value="global">Global (todas as empresas)</option>
+                </Select>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar'}</Button>
+              </div>
+            </form>
+          </Modal>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Atividades View ──────────────────────────────────────────────────────────
+
+function AtividadesView({ profile }: { profile: UserProfile }) {
+  const [items, setItems] = useState<TipoAtividade[]>([]);
+  const [treiTipos, setTreiTipos] = useState<TipoTreinamento[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ nome: '', treinamentosObrigatorios: [] as string[] });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { fetchAll(); }, []);
+  const fetchAll = async () => {
+    try {
+      const [a, t] = await Promise.all([api.get<TipoAtividade[]>('/treinamentos/atividades'), api.get<TipoTreinamento[]>('/treinamentos/tipos')]);
+      setItems(a || []); setTreiTipos(t || []);
+    } catch {}
+  };
+
+  const toggleTreinamento = (id: string) => {
+    setForm(f => ({ ...f, treinamentosObrigatorios: f.treinamentosObrigatorios.includes(id) ? f.treinamentosObrigatorios.filter(x => x !== id) : [...f.treinamentosObrigatorios, id] }));
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault(); setSaving(true);
+    try { await api.post('/treinamentos/atividades', form); fetchAll(); setShowForm(false); setForm({ nome: '', treinamentosObrigatorios: [] }); }
+    catch (err: any) { alert(err.error || 'Erro.'); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Tipos de Atividade</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Defina quais treinamentos são obrigatórios por atividade.</p>
+        </div>
+        <Button onClick={() => setShowForm(true)}><Plus size={16} /> Nova</Button>
+      </div>
+      <div className="space-y-3">
+        {items.map(a => (
+          <Card key={a.id} className="p-4">
+            <p className="font-semibold text-slate-900 mb-2">{a.nome}</p>
+            {a.treinamentosObrigatorios && a.treinamentosObrigatorios.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {a.treinamentosObrigatorios.map(id => {
+                  const t = treiTipos.find(tt => tt.id === id);
+                  return t ? <span key={id} className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{t.codigo}</span> : null;
+                })}
+              </div>
+            ) : <p className="text-xs text-slate-400 italic">Nenhum treinamento obrigatório vinculado.</p>}
+          </Card>
+        ))}
+        {items.length === 0 && <Card><EmptyState icon={Briefcase} title="Nenhuma atividade cadastrada" /></Card>}
+      </div>
+      <AnimatePresence>
+        {showForm && (
+          <Modal title="Nova Atividade" onClose={() => setShowForm(false)}>
+            <form onSubmit={handleSave} className="space-y-4">
+              <Input label="Nome da Atividade" value={form.nome} onChange={v => setForm(f => ({ ...f, nome: v }))} required placeholder="Ex: Trabalho em Altura" />
+              <div>
+                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Treinamentos Obrigatórios</label>
+                <div className="mt-2 space-y-2 max-h-60 overflow-y-auto">
+                  {treiTipos.map(t => (
+                    <label key={t.id} className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50">
+                      <input type="checkbox" checked={form.treinamentosObrigatorios.includes(t.id)} onChange={() => toggleTreinamento(t.id)}
+                        className="w-4 h-4 accent-blue-600" />
+                      <span className="text-sm text-slate-700"><span className="font-bold text-blue-600 mr-1">{t.codigo}</span>{t.nome}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar'}</Button>
+              </div>
+            </form>
+          </Modal>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Companies View (Master) ──────────────────────────────────────────────────
+
+function CompaniesView() {
+  const CompanyForm = ({ item, onSave, onClose }: { item: Company | null; onSave: () => void; onClose: () => void }) => {
+    const [name, setName] = useState(item?.name || '');
+    const [cnpj, setCnpj] = useState(item?.cnpj || '');
+    const [saving, setSaving] = useState(false);
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault(); setSaving(true);
+      try {
+        if (item) await api.put(`/companies/${item.id}`, { name, cnpj });
+        else await api.post('/companies', { name, cnpj });
+        onSave();
+      } catch (err: any) { alert(err.error || 'Erro.'); } finally { setSaving(false); }
+    };
+    return (
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input label="Nome" value={name} onChange={setName} required />
+        <Input label="CNPJ" value={cnpj} onChange={setCnpj} placeholder="00.000.000/0000-00" />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar'}</Button>
+        </div>
+      </form>
+    );
+  };
+  return (
+    <SimpleListView<Company>
+      title="Companhias" subtitle="Gerencie as empresas contratantes do sistema."
+      endpoint="/companies" icon={ShieldCheck}
+      columns={[
+        { label: 'Nome', render: c => <span className="font-semibold">{c.name}</span> },
+        { label: 'CNPJ', render: c => c.cnpj || '—' },
+        { label: 'Status', render: c => <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', c.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>{c.isActive ? 'Ativa' : 'Inativa'}</span> },
+      ]}
+      renderForm={(item, onSave, onClose) => <CompanyForm item={item as any} onSave={onSave} onClose={onClose} />}
+    />
+  );
+}
+
+// ─── Usuários View ────────────────────────────────────────────────────────────
+
+function UsuariosView({ profile }: { profile: UserProfile }) {
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ email: '', displayName: '', role: 'viewer', companyId: '' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { fetchAll(); }, []);
+  const fetchAll = async () => {
+    try {
+      const [u, c] = await Promise.all([api.get<UserProfile[]>('/users'), api.get<Company[]>('/companies')]);
+      setUsers(u || []); setCompanies(c || []);
+    } catch {}
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault(); setSaving(true);
+    try {
+      await api.post('/users', { ...form, companyId: profile.role === 'admin' ? profile.companyId : form.companyId });
+      fetchAll(); setShowForm(false); setForm({ email: '', displayName: '', role: 'viewer', companyId: '' });
+    } catch (err: any) { alert(err.error || 'Erro.'); } finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Excluir usuário?')) return;
+    try { await api.delete(`/users/${id}`); fetchAll(); } catch (err: any) { alert(err.error || 'Erro.'); }
+  };
+
+  const roleLabel = (r: string) => ({ master: 'Master', admin: 'Administrador', viewer: 'Visualizador' }[r] || r);
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Usuários</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Convide usuários — eles receberão um e-mail para definir a senha.</p>
+        </div>
+        <Button onClick={() => setShowForm(true)}><Plus size={16} /> Convidar</Button>
+      </div>
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-100">
+                {['Usuário', 'Nível', 'Empresa', 'Status'].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">{h}</th>)}
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {users.map(u => (
+                <tr key={u.uid || u.id} className="hover:bg-slate-50/50">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">{u.displayName?.[0]?.toUpperCase()}</div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{u.displayName}</p>
+                        <p className="text-xs text-slate-400">{u.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={cn('text-xs font-bold px-2.5 py-1 rounded-full',
+                      u.role === 'master' ? 'bg-purple-100 text-purple-700' : u.role === 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600')}>
+                      {roleLabel(u.role)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-slate-600">{u.companyName || '—'}</td>
+                  <td className="px-4 py-3">
+                    <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', u.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>
+                      {u.isActive ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {(u.uid !== profile.uid && u.id !== profile.id) && (
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => handleDelete(u.uid || u.id || '')}><Trash2 size={14} /></Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {users.length === 0 && <EmptyState icon={UserCog} title="Nenhum usuário encontrado" />}
+        </div>
+      </Card>
+      <AnimatePresence>
+        {showForm && (
+          <Modal title="Convidar Usuário" onClose={() => setShowForm(false)}>
+            <form onSubmit={handleSave} className="space-y-4">
+              <Input label="Nome" value={form.displayName} onChange={v => setForm(f => ({ ...f, displayName: v }))} required />
+              <Input label="E-mail" type="email" value={form.email} onChange={v => setForm(f => ({ ...f, email: v }))} required />
+              <Select label="Nível de Acesso" value={form.role} onChange={v => setForm(f => ({ ...f, role: v }))}>
+                <option value="viewer">Visualizador (Portaria)</option>
+                <option value="admin">Administrador</option>
+                {profile.role === 'master' && <option value="master">Master</option>}
+              </Select>
+              {profile.role === 'master' && form.role !== 'master' && (
+                <Select label="Empresa" value={form.companyId} onChange={v => setForm(f => ({ ...f, companyId: v }))} required>
+                  <option value="">— Selecione —</option>
+                  {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              )}
+              <div className="p-3 bg-blue-50 rounded-xl flex items-start gap-2 text-xs text-blue-700">
+                <Bell size={14} className="mt-0.5 shrink-0" />
+                O usuário receberá um e-mail com link para definir sua senha de acesso.
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Enviando convite...' : 'Convidar'}</Button>
+              </div>
+            </form>
+          </Modal>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Root App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'rondas' | 'locais' | 'usuarios' | 'logs'>('rondas');
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-
-  // Auth States
-  const [authMode, setAuthMode] = useState<'login' | 'forgot' | 'reset'>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [showResetPassword, setShowResetPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>('portaria');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [resetToken, setResetToken] = useState<string | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
-  const [authLoading, setAuthLoading] = useState(false);
+  const [resetPw, setResetPw] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
+  const [resetMsg, setResetMsg] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('reset_token');
-    if (token) {
-      setAuthMode('reset');
-      setResetToken(token);
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
+    if (token) { setResetToken(token); window.history.replaceState({}, '', window.location.pathname); }
     checkSession();
   }, []);
 
   const checkSession = async () => {
-    setLoading(true);
-    const user = getStoredUser();
-    if (user) {
+    const stored = getStoredUser();
+    if (stored) {
       try {
-        const freshUser = await api.get<UserProfile>('/auth/me');
-        if (freshUser) {
-          setProfile(freshUser);
-        } else {
-          clearSession();
-          setProfile(null);
-        }
-      } catch (err) {
-        clearSession();
-        setProfile(null);
-      }
-    } else {
-      setProfile(null);
+        const fresh = await api.get<UserProfile>('/auth/me');
+        setProfile(fresh);
+      } catch { clearSession(); }
     }
     setLoading(false);
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthLoading(true);
-
-    try {
-      const data = await api.post<{ token: string; user: UserProfile }>('/auth/login', {
-        email,
-        password,
-      });
-      saveSession(data.token, data.user);
-      setProfile(data.user);
-    } catch (error: any) {
-      console.error('Erro no login:', error);
-      setAuthError(error.error || 'E-mail ou senha incorretos.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthSuccess(null);
-    setAuthLoading(true);
-    try {
-      await api.post('/auth/forgot-password', { email });
-      setAuthSuccess('Se este e-mail estiver cadastrado, você receberá um link em instantes.');
-    } catch (error: any) {
-      console.error('Erro ao recuperar senha:', error);
-      setAuthError('Erro ao enviar e-mail. Tente novamente mais tarde.');
-    } finally {
-      setAuthLoading(false);
-    }
+  const handleLogout = async () => {
+    try { await api.post('/auth/logout', {}); } catch {}
+    clearSession(); setProfile(null);
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAuthError(null);
-    setAuthSuccess(null);
-    setAuthLoading(true);
-
-    if (password !== confirmPassword) {
-      setAuthError('As senhas não coincidem.');
-      setAuthLoading(false);
-      return;
-    }
-
+    if (resetPw !== resetConfirm) { setResetMsg('As senhas não coincidem.'); return; }
+    setResetLoading(true);
     try {
-      await api.post('/auth/reset-password', { token: resetToken, newPassword: password });
-      setAuthSuccess('Senha definida com sucesso! Retornando ao login...');
-      setTimeout(() => {
-        setAuthMode('login');
-        setPassword('');
-        setAuthSuccess(null);
-      }, 2500);
-    } catch (error: any) {
-      console.error('Erro ao redefinir senha:', error);
-      setAuthError(error.error || 'Link expirado ou inválido. Tente gerar um novo.');
-      if (error.error?.includes('expirado') || error.error?.includes('inválido')) {
-        setTimeout(() => setAuthMode('login'), 3500);
-      }
-    } finally {
-      setAuthLoading(false);
-    }
+      await api.post('/auth/reset-password', { token: resetToken, newPassword: resetPw });
+      setResetMsg('Senha definida com sucesso! Redirecionando...');
+      setTimeout(() => { setResetToken(null); setResetMsg(''); setResetPw(''); setResetConfirm(''); }, 2500);
+    } catch (err: any) { setResetMsg(err.error || 'Link inválido ou expirado.'); }
+    finally { setResetLoading(false); }
   };
 
-  const handleLogout = async () => {
-    try {
-      await api.post('/auth/logout', {});
-    } catch (err) {
-      // ignore
-    }
-    clearSession();
-    setProfile(null);
-    setIsMenuOpen(false);
-  };
+  if (loading) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
-        style={{ background: 'linear-gradient(135deg, #010d1f 0%, #021833 40%, #042d5a 70%, #063a72 100%)' }}
-      >
-        {/* Animated orbs */}
-        <div className="absolute top-[-15%] left-[-10%] w-[500px] h-[500px] rounded-full opacity-30 animate-pulse"
-          style={{ background: 'radial-gradient(circle, #1d6db5 0%, transparent 70%)' }} />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full opacity-20"
-          style={{ background: 'radial-gradient(circle, #0ea5e9 0%, transparent 70%)' }} />
-        <div className="absolute top-[30%] right-[5%] w-[300px] h-[300px] rounded-full opacity-15"
-          style={{ background: 'radial-gradient(circle, #38bdf8 0%, transparent 70%)' }} />
-
-        {/* Grid overlay texture */}
-        <div className="absolute inset-0 opacity-[0.03]"
-          style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-
-        <motion.div
-          initial={{ opacity: 0, y: 40, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.6, ease: 'easeOut' }}
-          className="relative z-10 w-full max-w-sm"
-        >
-          {/* White translucent card */}
-          <div className="rounded-[2rem] p-8 space-y-7"
-            style={{
-              background: 'rgba(255,255,255,0.95)',
-              backdropFilter: 'blur(24px)',
-              WebkitBackdropFilter: 'blur(24px)',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.5)'
-            }}
-          >
-            <div className="text-center space-y-4">
-              <div className="flex justify-center mb-2">
-                <img src="/RondaDigital.png" alt="RondaDigital" className="h-28 object-contain" />
-              </div>
-            </div>
-
-            <AnimatePresence mode="wait">
-              {authMode === 'login' && (
-                <motion.form
-                  key="login"
-                  initial={{ opacity: 0, x: -16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 16 }}
-                  onSubmit={handleLogin}
-                  className="space-y-5"
-                >
-                  <Input label="E-mail" type="email" theme="light" value={email}
-                    onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" required />
-
-                  <div className="space-y-1">
-                    <Input 
-                      label="Senha" 
-                      type={showLoginPassword ? "text" : "password"} 
-                      theme="light" 
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)} 
-                      placeholder="••••••••" 
-                      required 
-                      rightElement={
-                        <button type="button" onClick={() => setShowLoginPassword(!showLoginPassword)}>
-                          {showLoginPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                        </button>
-                      }
-                    />
-                    <div className="flex justify-end pt-1">
-                      <button type="button" onClick={() => setAuthMode('forgot')}
-                        className="text-xs text-primary font-medium hover:text-primary/80 transition-colors hover:underline">
-                        Esqueceu a senha?
-                      </button>
-                    </div>
-                  </div>
-
-                  {authError && (
-                    <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                      className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-red-700"
-                      style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                      <AlertCircle size={14} className="text-red-500 shrink-0" />
-                      {authError}
-                    </motion.div>
-                  )}
-
-                  <button type="submit" disabled={authLoading}
-                    className="w-full py-4 rounded-2xl text-sm font-bold text-white tracking-wide transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                    style={{
-                      background: authLoading ? 'rgba(37,99,235,0.5)' : 'linear-gradient(135deg, #1d6db5 0%, #0ea5e9 100%)',
-                      boxShadow: authLoading ? 'none' : '0 8px 24px rgba(14,165,233,0.35)'
-                    }}>
-                    {authLoading ? 'Entrando...' : 'Entrar no Sistema'}
-                  </button>
-                </motion.form>
-              )}
-
-              {authMode === 'forgot' && (
-                <motion.form
-                  key="forgot"
-                  initial={{ opacity: 0, x: -16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 16 }}
-                  onSubmit={handleForgotPassword}
-                  className="space-y-5"
-                >
-                  <div className="text-center space-y-1">
-                    <h2 className="text-lg font-bold text-gray-900">Recuperar Senha</h2>
-                    <p className="text-sm text-gray-500">Insira seu e-mail para receber as instruções.</p>
-                  </div>
-
-                  <Input label="E-mail" type="email" theme="light" value={email}
-                    onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" required />
-
-                  {authError && (
-                    <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                      className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-red-700"
-                      style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                      <AlertCircle size={14} className="text-red-500 shrink-0" />
-                      {authError}
-                    </motion.div>
-                  )}
-
-                  {authSuccess && (
-                     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                       className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-green-700"
-                       style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
-                       <CheckCircle2 size={14} className="text-green-500 shrink-0" />
-                       {authSuccess}
-                     </motion.div>
-                  )}
-
-                  <button type="submit" disabled={authLoading}
-                    className="w-full py-4 rounded-2xl text-sm font-bold text-white tracking-wide transition-all disabled:opacity-60"
-                    style={{ background: 'linear-gradient(135deg, #1d6db5 0%, #0ea5e9 100%)', boxShadow: '0 8px 24px rgba(14,165,233,0.35)' }}>
-                    {authLoading ? 'Enviando...' : 'Enviar Link de Recuperação'}
-                  </button>
-
-                  <button type="button" onClick={() => setAuthMode('login')}
-                    className="w-full text-center text-sm text-primary font-medium hover:text-primary/80 transition-colors">
-                    ← Voltar para o Login
-                  </button>
-                </motion.form>
-              )}
-
-              {authMode === 'reset' && (
-                <motion.form
-                  key="reset"
-                  initial={{ opacity: 0, x: -16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 16 }}
-                  onSubmit={handleResetPassword}
-                  className="space-y-5"
-                >
-                  <div className="text-center space-y-1">
-                    <h2 className="text-lg font-bold text-gray-900">Cadastrar Nova Senha</h2>
-                    <p className="text-sm text-gray-500">Defina uma senha segura para o seu acesso.</p>
-                  </div>
-
-                  <Input 
-                    label="Nova Senha" 
-                    type={showResetPassword ? "text" : "password"} 
-                    theme="light" 
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)} 
-                    placeholder="Mínimo de 8 caracteres" 
-                    required 
-                    rightElement={
-                      <button type="button" onClick={() => setShowResetPassword(!showResetPassword)}>
-                        {showResetPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                      </button>
-                    }
-                  />
-
-                  <Input 
-                    label="Confirme a Nova Senha" 
-                    type={showConfirmPassword ? "text" : "password"} 
-                    theme="light" 
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)} 
-                    placeholder="Confirme a sua senha" 
-                    required 
-                    rightElement={
-                      <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
-                        {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                      </button>
-                    }
-                  />
-
-                  {authError && (
-                    <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                      className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-red-700"
-                      style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                      <AlertCircle size={14} className="text-red-500 shrink-0" />
-                      {authError}
-                    </motion.div>
-                  )}
-
-                  {authSuccess && (
-                     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                       className="p-3 rounded-xl flex items-center gap-2 text-xs font-medium text-green-700"
-                       style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
-                       <CheckCircle2 size={14} className="text-green-500 shrink-0" />
-                       {authSuccess}
-                     </motion.div>
-                  )}
-
-                  <button type="submit" disabled={authLoading || authSuccess !== null}
-                    className="w-full py-4 rounded-2xl text-sm font-bold text-white tracking-wide transition-all disabled:opacity-60"
-                    style={{ background: 'linear-gradient(135deg, #1d6db5 0%, #0ea5e9 100%)', boxShadow: '0 8px 24px rgba(14,165,233,0.35)' }}>
-                    {authLoading ? 'Salvando...' : 'Salvar e Acessar'}
-                  </button>
-
-                  <button type="button" onClick={() => setAuthMode('login')}
-                    className="w-full text-center text-sm text-primary font-medium hover:text-primary/80 transition-colors">
-                    Cancelar e Voltar ao Login
-                  </button>
-                </motion.form>
-              )}
-            </AnimatePresence>
+  if (resetToken) return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl p-8 space-y-5">
+        <div className="text-center">
+          <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <ShieldCheck size={28} className="text-white" />
           </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-
-  return (
-    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
-      {/* Header - Full Width */}
-      <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-4 md:px-6 shrink-0 z-50 shadow-sm">
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => setIsMenuOpen(true)}
-            className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <Menu size={24} />
+          <h1 className="text-xl font-bold text-slate-900">Definir Senha</h1>
+          <p className="text-sm text-slate-500 mt-1">Crie sua senha de acesso ao sistema.</p>
+        </div>
+        <form onSubmit={handleResetPassword} className="space-y-4">
+          <Input label="Nova Senha" type="password" value={resetPw} onChange={setResetPw} required placeholder="Mínimo 8 caracteres" />
+          <Input label="Confirmar Senha" type="password" value={resetConfirm} onChange={setResetConfirm} required placeholder="Repita a senha" />
+          {resetMsg && <p className={cn('text-sm text-center font-medium', resetMsg.includes('sucesso') ? 'text-emerald-600' : 'text-red-600')}>{resetMsg}</p>}
+          <button type="submit" disabled={resetLoading} className="w-full py-3 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 transition-all disabled:opacity-60">
+            {resetLoading ? 'Salvando...' : 'Confirmar Senha'}
           </button>
-          <div className="flex items-center gap-2">
-            <img src="/RondaDigital.png" alt="RondaDigital" className="h-10 object-contain" />
-          </div>
-          <div className="hidden md:block h-6 w-px bg-gray-200 mx-2" />
-          <div className="hidden md:block text-sm text-gray-500 font-medium">
-            Painel de Controle de Rondas
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={handleLogout} className="flex items-center gap-2 text-gray-500 hover:text-red-600 hover:bg-red-50 px-3">
-            <span className="hidden sm:inline text-sm font-medium">Sair</span>
-            <LogOut size={20} />
-          </Button>
-        </div>
-      </header>
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar - Desktop */}
-        <motion.aside
-          initial={false}
-          animate={{ width: isSidebarCollapsed ? 80 : 260 }}
-          className="hidden md:flex flex-col bg-[#002b5c] text-white transition-all duration-300 ease-in-out relative z-40 border-r border-white/10"
-        >
-          {/* Collapse Toggle Button - Edge */}
-          <button
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="absolute -right-3 top-8 h-6 w-6 bg-white border border-gray-200 rounded-full flex items-center justify-center text-gray-600 shadow-sm hover:bg-gray-50 z-50 flex"
-          >
-            {isSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
-
-          <nav className="flex-1 px-3 space-y-2 mt-6">
-            <NavItems 
-              activeTab={activeTab} 
-              setActiveTab={setActiveTab} 
-              role={profile?.role} 
-              collapsed={isSidebarCollapsed}
-            />
-          </nav>
-
-        <div className="p-4 border-t border-white/10 bg-black/10 relative">
-          <div className="flex flex-col gap-4">
-            <div className={cn("flex items-center gap-3", isSidebarCollapsed ? "justify-center" : "px-2")}>
-              <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-white font-bold shrink-0 border border-white/20 shadow-inner">
-                {profile?.displayName?.[0]}
-              </div>
-              {!isSidebarCollapsed && (
-                <motion.div 
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="overflow-hidden"
-                >
-                  <p className="text-sm font-bold truncate text-white">{profile?.displayName}</p>
-                  <p className="text-xs text-blue-200 capitalize truncate">{profile?.role}</p>
-                </motion.div>
-              )}
-            </div>
-          </div>
-        </div>
-        </motion.aside>
-
-        {/* Mobile Menu Overlay */}
-        <AnimatePresence>
-          {isMenuOpen && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsMenuOpen(false)}
-                className="fixed inset-0 bg-black/50 z-40 md:hidden"
-              />
-              <motion.div
-                initial={{ x: '-100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '-100%' }}
-                className="fixed top-0 left-0 bottom-0 w-72 bg-[#002b5c] text-white z-50 md:hidden p-6 flex flex-col"
-              >
-                <div className="flex items-center justify-between mb-8">
-                  <div className="flex items-center gap-2">
-                    <img src="/RondaDigital.png" alt="RondaDigital" className="h-8 object-contain filter brightness-0 invert" />
-                  </div>
-                  <button onClick={() => setIsMenuOpen(false)}>
-                    <X size={24} />
-                  </button>
-                </div>
-                <nav className="flex-1 space-y-2">
-                  <NavItems 
-                    activeTab={activeTab} 
-                    setActiveTab={(tab) => { setActiveTab(tab); setIsMenuOpen(false); }} 
-                    role={profile?.role} 
-                    mobile 
-                  />
-                </nav>
-                <div className="pt-6 border-t border-white/10">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-white font-bold">
-                      {profile?.displayName?.[0]}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold">{profile?.displayName}</p>
-                      <p className="text-xs text-blue-200 capitalize">{profile?.role}</p>
-                    </div>
-                  </div>
-                  <Button variant="secondary" onClick={handleLogout} className="w-full bg-white/10 border-none text-white hover:bg-white/20">
-                    Sair do Sistema
-                  </Button>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-
-        {/* Main Content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-8">
-          <div className="max-w-6xl mx-auto">
-            {activeTab === 'rondas' && <RondasView profile={profile} />}
-            {activeTab === 'locais' && profile?.role === 'admin' && <LocaisView />}
-            {activeTab === 'usuarios' && profile?.role === 'admin' && <UsuariosView />}
-            {activeTab === 'logs' && profile?.role === 'admin' && <LogsView />}
-          </div>
-        </main>
+        </form>
       </div>
     </div>
   );
-}
 
-function NavItems({ activeTab, setActiveTab, role, mobile, collapsed }: { 
-  activeTab: string; 
-  setActiveTab: (tab: any) => void; 
-  role?: UserRole;
-  mobile?: boolean;
-  collapsed?: boolean;
-}) {
-  const items = [
-    { id: 'rondas', label: 'Rondas', icon: QrCode },
-    ...(role === 'admin' ? [
-      { id: 'locais', label: 'Locais', icon: MapPin },
-      { id: 'usuarios', label: 'Usuários', icon: Users },
-      { id: 'logs', label: 'Relatórios', icon: History },
-    ] : [])
-  ];
+  if (!profile) return <LoginPage onLogin={p => setProfile(p)} />;
 
   return (
-    <div className={cn("flex flex-col gap-2")}>
-      {items.map((item) => (
-        <button
-          key={item.id}
-          onClick={() => setActiveTab(item.id)}
-          className={cn(
-            "flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold transition-all group relative overflow-hidden",
-            activeTab === item.id 
-              ? "bg-primary text-white shadow-lg shadow-primary/30" 
-              : "text-blue-100 hover:bg-white/10",
-            collapsed && "justify-center px-2"
-          )}
-          title={collapsed ? item.label : undefined}
-        >
-          {activeTab === item.id && (
-            <motion.div 
-              layoutId="activeTab"
-              className="absolute inset-0 bg-primary"
-              transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-            />
-          )}
-          <item.icon size={22} className={cn("shrink-0 relative z-10", activeTab === item.id ? "text-white" : "text-blue-300 group-hover:text-white")} />
-          {!collapsed && (
-            <motion.span
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="whitespace-nowrap relative z-10"
-            >
-              {item.label}
-            </motion.span>
-          )}
-        </button>
-      ))}
-    </div>
-  );
-}
+    <div className="flex h-screen bg-slate-50 overflow-hidden" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} profile={profile}
+        collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} onLogout={handleLogout} />
 
-// --- Views ---
-
-function RondasView({ profile }: { profile: UserProfile | null }) {
-  const [locais, setLocais] = useState<Location[]>([]);
-  const [scannedToday, setScannedToday] = useState<string[]>([]);
-  const [userLogs, setUserLogs] = useState<ScanLog[]>([]);
-  const [scanning, setScanning] = useState(false);
-  const [scanStatus, setScanStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  
-  // Filters for the table
-  const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
-  const [locationFilter, setLocationFilter] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile]);
-
-  const fetchData = async () => {
-    try {
-      const fetchedLocais = await api.get<Location[]>('/locais');
-      setLocais(fetchedLocais || []);
-    } catch (err) {
-      console.error('Erro ao buscar locais:', err);
-    }
-
-    if (!profile?.uid) return;
-
-    try {
-      if (profile.role === 'admin') {
-        // Admin vê todas as rondas dos últimos 7 dias
-        const end = new Date();
-        const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        const [todayIds, logs] = await Promise.all([
-          api.get<string[]>('/logs/today'),
-          api.get<ScanLog[]>(`/logs?startDate=${start.toISOString()}&endDate=${end.toISOString()}`)
-        ]);
-        setScannedToday(todayIds || []);
-        setUserLogs(logs || []);
-      } else {
-        const [todayIds, logs] = await Promise.all([
-          api.get<string[]>('/logs/today'),
-          api.get<ScanLog[]>('/logs/my')
-        ]);
-        setScannedToday(todayIds || []);
-        setUserLogs(logs || []);
-      }
-    } catch (err) {
-      console.error('Erro ao buscar logs:', err);
-    }
-  };
-
-  const filteredLogs = userLogs.filter(log => {
-    const matchesSearch = log.locationName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesDate = !dateFilter || log.timestamp.startsWith(dateFilter);
-    const matchesLocation = !locationFilter || log.locationName === locationFilter;
-    return matchesSearch && matchesDate && matchesLocation;
-  });
-
-  const onScanSuccess = async (decodedText: string) => {
-    setScanStatus('scanning');
-    
-    try {
-      const log = await api.post<ScanLog>('/logs', { qrValue: decodedText });
-      setScanStatus('success');
-      setSuccessMsg(`Ronda registrada em: ${log.locationName}`);
-      setTimeout(() => {
-        setScanning(false);
-        setScanStatus('idle');
-        setSuccessMsg(null);
-        fetchData(); // atualiza a lista após escanear
-      }, 2000);
-    } catch (err: any) {
-      setScanStatus('error');
-      setErrorMsg(err.error || 'QR Code inválido ou local não cadastrado.');
-      setTimeout(() => setScanStatus('idle'), 3000);
-    }
-  };
-
-  const isAdmin = profile?.role === 'admin';
-
-  return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-gray-900 tracking-tight">
-            {isAdmin ? 'Rondas Realizadas' : 'Minhas Rondas'}
-          </h2>
-          <p className="text-gray-500 font-medium">
-            {isAdmin ? 'Histórico de todas as rondas da equipe.' : 'Gerencie suas atividades e consulte seu histórico.'}
-          </p>
-        </div>
-        {!isAdmin && (
-          <Button onClick={() => setScanning(true)} className="py-4 px-6 rounded-2xl text-lg">
-            <Camera size={24} />
-            Escanear QR Code
-          </Button>
-        )}
-      </div>
-
-      {successMsg && (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-secondary text-white px-6 py-4 rounded-3xl flex items-center gap-3 font-bold shadow-xl shadow-secondary/20"
-        >
-          <CheckCircle2 size={24} />
-          {successMsg}
-        </motion.div>
-      )}
-
-      {errorMsg && (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-red-600 text-white px-6 py-4 rounded-3xl flex items-center gap-3 font-bold shadow-xl shadow-red-600/20"
-        >
-          <AlertCircle size={24} />
-          {errorMsg}
-        </motion.div>
-      )}
-
-      {/* Histórico de Rondas */}
-      <div className="space-y-6 pt-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h3 className="text-xl font-black text-gray-900 tracking-tight">
-            {isAdmin ? 'Histórico Geral (7 dias)' : 'Meu Histórico de Rondas'}
-          </h3>
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input 
-                placeholder="Buscar local..." 
-                className="w-full h-10 pl-10 pr-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <Button 
-              variant="ghost" 
-              onClick={() => setShowFilters(!showFilters)}
-              className={cn("gap-2 border border-gray-200", showFilters && "bg-primary/5 border-primary text-primary")}
-            >
-              <Filter size={18} />
-              Filtros
-            </Button>
-          </div>
-        </div>
-
-        <AnimatePresence>
-          {showFilters && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
-            >
-              <Card className="p-4 bg-gray-50/50 border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-4 rounded-2xl">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Data</label>
-                  <div className="relative">
-                    <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                    <input 
-                      type="date" 
-                      className="w-full h-10 pl-10 pr-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                      value={dateFilter}
-                      onChange={(e) => setDateFilter(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Local</label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                    <select 
-                      className="w-full h-10 pl-10 pr-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none"
-                      value={locationFilter}
-                      onChange={(e) => setLocationFilter(e.target.value)}
-                    >
-                      <option value="">Todos os locais</option>
-                      {locais.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </Card>
+      <main className="flex-1 overflow-y-auto">
+        <div className="p-6 md:p-8">
+          <AnimatePresence mode="wait">
+            <motion.div key={activeTab} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
+              {activeTab === 'portaria'         && <PortariaView profile={profile} />}
+              {activeTab === 'pessoas'          && <PessoasView profile={profile} />}
+              {activeTab === 'empresas_terceiro' && <EmpresasTerceiroView profile={profile} />}
+              {activeTab === 'treinamentos'     && <TreinamentosView profile={profile} />}
+              {activeTab === 'atividades'       && <AtividadesView profile={profile} />}
+              {activeTab === 'companies'        && profile.role === 'master' && <CompaniesView />}
+              {activeTab === 'usuarios'         && <UsuariosView profile={profile} />}
             </motion.div>
-          )}
-        </AnimatePresence>
-
-        <Card className="overflow-hidden border-none shadow-sm rounded-3xl">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-gray-50/50 border-b border-gray-100">
-                <tr>
-                  {isAdmin && <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Vigilante</th>}
-                  <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Local</th>
-                  <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Data/Hora</th>
-                  {!isAdmin && <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Status</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50 bg-white">
-                {filteredLogs.length === 0 ? (
-                  <tr>
-                    <td colSpan={isAdmin ? 3 : 3} className="px-6 py-16 text-center text-gray-400">
-                      <div className="flex flex-col items-center gap-4">
-                        <History size={48} className="opacity-20" />
-                        <p className="font-medium">Nenhum registro de ronda encontrado.</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-gray-50/30 transition-colors group">
-                      {isAdmin && (
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-3">
-                            <div className="h-9 w-9 rounded-xl bg-primary/5 flex items-center justify-center text-primary font-black border border-primary/10">
-                              {log.userName?.[0]}
-                            </div>
-                            <div>
-                              <p className="font-bold text-gray-900 text-sm">{log.userName}</p>
-                              <p className="text-[10px] text-gray-400">{log.userEmail}</p>
-                            </div>
-                          </div>
-                        </td>
-                      )}
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-2xl bg-primary/5 flex items-center justify-center text-primary border border-primary/10">
-                            <MapPin size={20} />
-                          </div>
-                          <span className="font-bold text-gray-900">{log.locationName}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-5">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-black text-gray-900 tracking-tight">
-                            {format(new Date(log.timestamp), "dd/MM/yyyy")}
-                          </span>
-                          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-                            {format(new Date(log.timestamp), "HH:mm:ss")}
-                          </span>
-                        </div>
-                      </td>
-                      {!isAdmin && (
-                        <td className="px-6 py-5 text-right">
-                          <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-secondary bg-secondary/10 px-3 py-1 rounded-full border border-secondary/20">
-                            <CheckCircle2 size={12} />
-                            Realizada
-                          </span>
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
-
-      {!isAdmin && scanning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setScanning(false)}
-            className="absolute inset-0 bg-black/80 backdrop-blur-md"
-          />
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            className="bg-white rounded-[2rem] p-6 w-full max-w-[380px] relative z-10 shadow-2xl overflow-hidden mx-auto"
-          >
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-primary via-accent to-secondary" />
-            
-            <button 
-              onClick={() => setScanning(false)}
-              className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all"
-            >
-              <X size={20} />
-            </button>
-
-            <div className="text-center mb-6">
-              <div className="inline-flex p-3 bg-primary/5 rounded-2xl text-primary mb-3">
-                <Camera size={24} />
-              </div>
-              <h3 className="text-xl font-black text-gray-900 tracking-tight">Escanear Local</h3>
-              <p className="text-sm text-gray-500 font-medium">Aponte para o QR Code do local.</p>
-            </div>
-
-            <div className="relative group">
-              <div className="absolute -inset-1 bg-gradient-to-r from-primary to-secondary rounded-[1.5rem] blur opacity-10 group-hover:opacity-20 transition duration-1000 group-hover:duration-200"></div>
-              <div id="reader" className={cn(
-                "relative overflow-hidden rounded-[1.2rem] border-2 border-gray-100 shadow-lg bg-gray-900 aspect-square transition-all duration-500",
-                scanStatus === 'success' && "border-secondary shadow-secondary/10",
-                scanStatus === 'error' && "border-red-500 shadow-red-500/10"
-              )}>
-                {/* Scanner will be rendered here */}
-                <AnimatePresence>
-                  {scanStatus === 'success' && (
-                    <motion.div 
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="absolute inset-0 z-30 bg-secondary/95 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4 text-center"
-                    >
-                      <motion.div
-                        initial={{ scale: 0, rotate: -45 }}
-                        animate={{ scale: 1, rotate: 0 }}
-                        className="bg-white text-secondary rounded-full p-3 mb-3"
-                      >
-                        <CheckCircle2 size={40} />
-                      </motion.div>
-                      <h4 className="text-lg font-black tracking-tight">Sucesso!</h4>
-                      <p className="text-xs font-medium opacity-90">{successMsg}</p>
-                    </motion.div>
-                  )}
-                  {scanStatus === 'error' && (
-                    <motion.div 
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="absolute inset-0 z-30 bg-red-600/95 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4 text-center"
-                    >
-                      <motion.div
-                        initial={{ scale: 0, rotate: 45 }}
-                        animate={{ scale: 1, rotate: 0 }}
-                        className="bg-white text-red-600 rounded-full p-3 mb-3"
-                      >
-                        <AlertCircle size={40} />
-                      </motion.div>
-                      <h4 className="text-lg font-black tracking-tight">Erro</h4>
-                      <p className="text-xs font-medium opacity-90">{errorMsg}</p>
-                      <Button 
-                        variant="ghost" 
-                        onClick={() => setScanStatus('idle')}
-                        className="mt-3 text-white hover:bg-white/20 border border-white/30 h-8 text-xs"
-                      >
-                        Tentar Novamente
-                      </Button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-              
-              {/* Scanning Line Animation */}
-              {scanStatus === 'idle' && (
-                <motion.div 
-                  animate={{ top: ['15%', '85%', '15%'] }}
-                  transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
-                  className="absolute left-3 right-3 h-0.5 bg-primary/40 shadow-[0_0_10px_rgba(0,43,92,0.6)] z-20 pointer-events-none"
-                />
-              )}
-            </div>
-
-            <div className="mt-6 flex items-center justify-center gap-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-              <div className="flex items-center gap-1">
-                <ShieldCheck size={12} className="text-secondary" />
-                Seguro
-              </div>
-              <div className="w-1 h-1 rounded-full bg-gray-200" />
-              <div className="flex items-center gap-1">
-                <QrCode size={12} className="text-primary" />
-                RondaDigital
-              </div>
-            </div>
-
-            <Scanner onScanSuccess={onScanSuccess} />
-          </motion.div>
+          </AnimatePresence>
         </div>
-      )}
+      </main>
     </div>
   );
 }
-
-function Scanner({ onScanSuccess }: { onScanSuccess: (text: string) => void }) {
-  const lockRef = useRef(false);
-
-  useEffect(() => {
-    lockRef.current = false;
-
-    const handleScan = (text: string) => {
-      if (lockRef.current) return; // bloqueia leituras duplicadas
-      lockRef.current = true;
-      onScanSuccess(text);
-    };
-
-    const scanner = new Html5QrcodeScanner('reader', {
-      fps: 5,
-      qrbox: { width: 250, height: 250 },
-      aspectRatio: 1.0,
-      videoConstraints: {
-        facingMode: { ideal: 'environment' } // prefere câmera traseira
-      }
-    } as any, false);
-
-    scanner.render(handleScan, () => {});
-
-    return () => {
-      scanner.clear().catch((error: any) => console.error('Failed to clear scanner', error));
-    };
-  }, []);
-
-  return null;
-}
-
-function LocaisView() {
-  const [locais, setLocais] = useState<Location[]>([]);
-  const [isAdding, setIsAdding] = useState(false);
-  const [isEditing, setIsEditing] = useState<Location | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
-  const [name, setName] = useState('');
-  const [desc, setDesc] = useState('');
-  const [selectedLocal, setSelectedLocal] = useState<Location | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-
-  useEffect(() => {
-    fetchLocais();
-  }, []);
-
-  const fetchLocais = async () => {
-    try {
-      const data = await api.get<Location[]>('/locais');
-      setLocais(data || []);
-    } catch (err) {
-      console.error('Erro ao buscar locais:', err);
-    }
-  };
-
-  const showFeedback = (type: 'success' | 'error', message: string) => {
-    setFeedback({ type, message });
-    setTimeout(() => setFeedback(null), 3000);
-  };
-
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const qrValue = `vigi-${Math.random().toString(36).substr(2, 9)}`;
-    try {
-      await api.post('/locais', {
-        name,
-        description: desc,
-        qrValue
-      });
-      setName('');
-      setDesc('');
-      setIsAdding(false);
-      showFeedback('success', 'Local cadastrado com sucesso!');
-      fetchLocais();
-    } catch (err) {
-      console.error('Erro ao cadastrar local:', err);
-      showFeedback('error', 'Erro ao cadastrar local.');
-    }
-  };
-
-  const handleEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isEditing) return;
-    try {
-      await api.put(`/locais/${isEditing.id}`, {
-        name,
-        description: desc
-      });
-      setIsEditing(null);
-      setName('');
-      setDesc('');
-      showFeedback('success', 'Local atualizado com sucesso!');
-      fetchLocais();
-    } catch (err) {
-      console.error('Erro ao atualizar local:', err);
-      showFeedback('error', 'Erro ao atualizar local.');
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!confirmDelete) return;
-    try {
-      await api.delete(`/locais/${confirmDelete}`);
-      setConfirmDelete(null);
-      showFeedback('success', 'Local excluído com sucesso!');
-      fetchLocais();
-    } catch (err) {
-      console.error('Erro ao excluir local:', err);
-      showFeedback('error', 'Erro ao excluir local.');
-    }
-  };
-
-  const handleDownloadQR = (local: Location) => {
-    const svg = document.getElementById(`qr-${local.id}`);
-    if (!svg) return;
-    
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
-    
-    img.onload = () => {
-      canvas.width = 500;
-      canvas.height = 500;
-      if (ctx) {
-        ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 50, 50, 400, 400);
-        
-        const pngFile = canvas.toDataURL("image/png");
-        const downloadLink = document.createElement("a");
-        downloadLink.download = `QRCode-${local.name}.png`;
-        downloadLink.href = pngFile;
-        downloadLink.click();
-      }
-    };
-    
-    img.src = "data:image/svg+xml;base64," + btoa(svgData);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-gray-900 tracking-tight">Gestão de Locais</h2>
-          <p className="text-gray-500 font-medium">Cadastre e gerencie os pontos de ronda.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="bg-white p-1 rounded-2xl border border-gray-100 flex shadow-sm">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={cn(
-                "p-2 rounded-xl transition-all",
-                viewMode === 'grid' ? "bg-primary text-white shadow-md shadow-primary/20" : "text-gray-400 hover:text-gray-600"
-              )}
-            >
-              <LayoutGrid size={20} />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={cn(
-                "p-2 rounded-xl transition-all",
-                viewMode === 'list' ? "bg-primary text-white shadow-md shadow-primary/20" : "text-gray-400 hover:text-gray-600"
-              )}
-            >
-              <List size={20} />
-            </button>
-          </div>
-          <Button onClick={() => { setName(''); setDesc(''); setIsAdding(true); }} className="py-3 px-6 rounded-2xl">
-            <Plus size={20} />
-            Novo Local
-          </Button>
-        </div>
-      </div>
-
-      {feedback && (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className={cn(
-            "p-4 rounded-3xl flex items-center gap-3 border shadow-lg font-bold",
-            feedback.type === 'success' ? "bg-secondary text-white border-none" : "bg-red-600 text-white border-none"
-          )}
-        >
-          {feedback.type === 'success' ? <CheckCircle2 size={24} /> : <AlertCircle size={24} />}
-          <span>{feedback.message}</span>
-        </motion.div>
-      )}
-
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {locais.map((local) => (
-            <Card key={local.id} className="p-6 space-y-4 hover:shadow-xl transition-all group border-none bg-white rounded-3xl relative overflow-hidden">
-              <div className="flex justify-between items-start">
-                <div className="flex-1 min-w-0 pr-2">
-                  <h3 className="text-xl font-black text-gray-900 truncate tracking-tight">{local.name}</h3>
-                  <p className="text-sm text-gray-500 font-medium line-clamp-2 mt-1">{local.description}</p>
-                </div>
-                <Button variant="ghost" onClick={() => setSelectedLocal(local)} className="h-12 w-12 shrink-0 bg-primary/5 text-primary hover:bg-primary/10 rounded-2xl border border-primary/10">
-                  <QrCode size={24} />
-                </Button>
-              </div>
-              
-              <div className="pt-6 border-t border-gray-50 flex justify-between items-center">
-                <div className="flex gap-2">
-                  <button 
-                    className="h-10 w-10 flex items-center justify-center bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors border border-blue-100"
-                    onClick={() => {
-                      setName(local.name);
-                      setDesc(local.description);
-                      setIsEditing(local);
-                    }}
-                    title="Editar"
-                  >
-                    <Edit2 size={18} />
-                  </button>
-                  <button 
-                    className="h-10 w-10 flex items-center justify-center bg-red-50 text-red-600 hover:bg-red-100 rounded-xl transition-colors border border-red-100"
-                    onClick={() => setConfirmDelete(local.id)}
-                    title="Excluir"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">ID: {local.id.slice(0, 6)}</span>
-              </div>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <Card className="overflow-hidden border-none shadow-sm rounded-3xl">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-gray-50/50 border-b border-gray-100">
-                <tr>
-                  <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Local</th>
-                  <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Descrição</th>
-                  <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50 bg-white">
-                {locais.map((local) => (
-                  <tr key={local.id} className="hover:bg-gray-50/30 transition-colors group">
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-2xl bg-primary/5 flex items-center justify-center text-primary border border-primary/10">
-                          <MapPin size={20} />
-                        </div>
-                        <span className="font-bold text-gray-900">{local.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-5">
-                      <span className="text-sm text-gray-500 font-medium line-clamp-1">{local.description}</span>
-                    </td>
-                    <td className="px-6 py-5">
-                      <div className="flex items-center justify-end gap-2">
-                        <button 
-                          className="p-2 bg-primary/5 text-primary hover:bg-primary/10 rounded-xl transition-colors border border-primary/10"
-                          onClick={() => setSelectedLocal(local)}
-                          title="Ver QR Code"
-                        >
-                          <QrCode size={18} />
-                        </button>
-                        <button 
-                          className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors border border-blue-100"
-                          onClick={() => {
-                            setName(local.name);
-                            setDesc(local.description);
-                            setIsEditing(local);
-                          }}
-                          title="Editar"
-                        >
-                          <Edit2 size={18} />
-                        </button>
-                        <button 
-                          className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl transition-colors border border-red-100"
-                          onClick={() => setConfirmDelete(local.id)}
-                          title="Excluir"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {locais.length === 0 && (
-          <div className="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-gray-200">
-            <MapPin size={48} className="mx-auto text-gray-300 mb-4" />
-            <p className="text-gray-500 font-medium">Nenhum local cadastrado.</p>
-            <p className="text-sm text-gray-400">Clique em "Novo Local" para começar.</p>
-          </div>
-        )}
-
-      {/* Add/Edit Modal */}
-      {(isAdding || isEditing) && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="max-w-md w-full"
-          >
-            <Card className="p-6 space-y-6 shadow-2xl">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">
-                  {isAdding ? 'Cadastrar Novo Local' : 'Editar Local'}
-                </h3>
-                <button onClick={() => { setIsAdding(false); setIsEditing(null); }} className="text-gray-400 hover:text-gray-600">
-                  <X size={24} />
-                </button>
-              </div>
-              <form onSubmit={isAdding ? handleAdd : handleEdit} className="space-y-4">
-                <Input 
-                  label="Nome do Local" 
-                  value={name} 
-                  onChange={e => setName(e.target.value)} 
-                  required 
-                  placeholder="Ex: Portaria Norte" 
-                />
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-gray-700">Descrição</label>
-                  <textarea 
-                    value={desc} 
-                    onChange={e => setDesc(e.target.value)} 
-                    placeholder="Ex: Entrada principal de veículos"
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all min-h-[100px] resize-none"
-                  />
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <Button variant="secondary" className="flex-1" type="button" onClick={() => { setIsAdding(false); setIsEditing(null); }}>
-                    Cancelar
-                  </Button>
-                  <Button type="submit" className="flex-1">
-                    {isAdding ? 'Salvar Local' : 'Atualizar'}
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="max-w-sm w-full"
-          >
-            <Card className="p-6 text-center space-y-6 shadow-2xl">
-              <div className="h-16 w-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
-                <Trash2 size={32} />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-xl font-bold text-gray-900">Confirmar Exclusão</h3>
-                <p className="text-gray-500">Tem certeza que deseja excluir este local? Esta ação não pode ser desfeita.</p>
-              </div>
-              <div className="flex gap-3">
-                <Button variant="secondary" className="flex-1" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
-                <Button variant="danger" className="flex-1" onClick={handleDelete} disabled={isSubmitting}>{isSubmitting ? 'Excluindo...' : 'Excluir'}</Button>
-              </div>
-            </Card>
-          </motion.div>
-        </div>
-      )}
-
-      {/* QR Modal */}
-      {selectedLocal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="max-w-sm w-full"
-          >
-            <Card className="p-8 text-center space-y-6 shadow-2xl relative overflow-hidden">
-              <div id="print-section" className="space-y-6">
-                <button 
-                  onClick={() => setSelectedLocal(null)}
-                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 no-print"
-                >
-                  <X size={24} />
-                </button>
-                <div className="space-y-1">
-                  <h3 className="text-xl font-bold text-gray-900">{selectedLocal.name}</h3>
-                  <p className="text-sm text-gray-500">QR Code de Identificação</p>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border-2 border-gray-50 inline-block shadow-inner">
-                  <QRCodeSVG id={`qr-${selectedLocal.id}`} value={selectedLocal.qrValue} size={200} level="H" includeMargin={true} />
-                </div>
-                <div className="bg-gray-50 p-2 rounded-lg">
-                  <p className="text-[10px] text-gray-400 font-mono uppercase tracking-widest">{selectedLocal.qrValue}</p>
-                </div>
-              </div>
-              <div className="flex flex-col gap-3 no-print">
-                <Button onClick={() => handleDownloadQR(selectedLocal)} className="w-full bg-indigo-600 hover:bg-indigo-700">
-                  <Download size={18} />
-                  Baixar Imagem (PNG)
-                </Button>
-                <Button variant="secondary" onClick={() => window.print()} className="w-full">
-                  Imprimir
-                </Button>
-              </div>
-            </Card>
-          </motion.div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function UsuariosView() {
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [search, setSearch] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
-  const [isEditingUser, setIsEditingUser] = useState<UserProfile | null>(null);
-  const [confirmDeleteUser, setConfirmDeleteUser] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [newRole, setNewRole] = useState<UserRole>('vigilante');
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
-
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
-    try {
-      const data = await api.get<UserProfile[]>('/users');
-      setUsers(data || []);
-    } catch (err) {
-      console.error('Erro ao buscar usuários:', err);
-    }
-  };
-
-  const showFeedback = (type: 'success' | 'error', message: string) => {
-    setFeedback({ type, message });
-    setTimeout(() => setFeedback(null), 3000);
-  };
-
-  const handleAddUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      await api.post('/users', {
-        email: newEmail,
-        displayName: newName,
-        role: newRole
-      });
-      showFeedback('success', 'Convite gerado! O usuário receberá um e-mail para cadastrar a senha (válido por 1 hora).');
-      setIsAdding(false);
-      setNewName('');
-      setNewEmail('');
-      fetchUsers();
-    } catch (err: any) {
-      console.error('Erro ao cadastrar usuário:', err);
-      showFeedback('error', err.error || 'Erro ao cadastrar usuário.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleEditUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isEditingUser || isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      await api.put(`/users/${isEditingUser.uid}`, {
-        email: newEmail,
-        displayName: newName
-      });
-      showFeedback('success', 'Usuário atualizado com sucesso!');
-      setIsEditingUser(null);
-      setNewName('');
-      setNewEmail('');
-      fetchUsers();
-    } catch (err: any) {
-      console.error('Erro ao atualizar usuário:', err);
-      showFeedback('error', err.error || 'Erro ao atualizar usuário.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeleteUser = async () => {
-    if (!confirmDeleteUser || isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      await api.delete(`/users/${confirmDeleteUser}`);
-      showFeedback('success', 'Usuário excluído com sucesso!');
-      setConfirmDeleteUser(null);
-      fetchUsers();
-    } catch (err: any) {
-      console.error('Erro ao excluir usuário:', err);
-      showFeedback('error', err.error || 'Erro ao excluir usuário.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleResendInvite = async () => {
-    if (!isEditingUser || isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      await api.post(`/users/${isEditingUser.uid}/resend-invite`, {});
-      showFeedback('success', 'E-mail reenviado com o link de redefinição!');
-    } catch (err: any) {
-      console.error('Erro ao reenviar link:', err);
-      showFeedback('error', err.error || 'Erro ao reenviar o convite de senha.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const toggleRole = async (user: UserProfile) => {
-    const newRole: UserRole = user.role === 'admin' ? 'vigilante' : 'admin';
-    try {
-      await api.put(`/users/${user.uid}/role`, { role: newRole });
-      showFeedback('success', `Nível de ${user.displayName} alterado para ${newRole}.`);
-      fetchUsers();
-    } catch (err: any) {
-      console.error('Erro ao alterar nível:', err);
-      showFeedback('error', err.error || 'Erro ao alterar nível.');
-    }
-  };
-
-  const filteredUsers = users.filter(u => 
-    u.displayName?.toLowerCase().includes(search.toLowerCase()) || 
-    u.email?.toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-gray-900 tracking-tight">Gestão de Usuários</h2>
-          <p className="text-gray-500 font-medium">Cadastre e gerencie a equipe do sistema.</p>
-        </div>
-        <Button onClick={() => setIsAdding(true)} className="py-3 px-6 rounded-2xl">
-          <UserPlus size={20} />
-          Novo Usuário
-        </Button>
-      </div>
-
-      {feedback && (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className={cn(
-            "p-4 rounded-3xl flex items-center gap-3 border shadow-lg font-bold",
-            feedback.type === 'success' ? "bg-secondary text-white border-none" : "bg-red-600 text-white border-none"
-          )}
-        >
-          {feedback.type === 'success' ? <CheckCircle2 size={24} /> : <AlertCircle size={24} />}
-          <span>{feedback.message}</span>
-        </motion.div>
-      )}
-
-      <div className="relative group">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary transition-colors" size={20} />
-        <input 
-          type="text"
-          placeholder="Buscar por nome ou email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-12 pr-4 py-4 bg-white border border-gray-100 rounded-3xl outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all shadow-sm font-medium placeholder:text-gray-400"
-        />
-      </div>
-
-      <Card className="overflow-hidden border-none shadow-sm rounded-3xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50/50 border-b border-gray-100">
-              <tr>
-                <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Nome</th>
-                <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Email</th>
-                <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Nível</th>
-                <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50 bg-white">
-              {filteredUsers.map((u) => (
-                <tr key={u.uid} className="hover:bg-gray-50/30 transition-colors group">
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-4">
-                      <div className="h-11 w-11 rounded-2xl bg-primary/5 flex items-center justify-center text-primary font-black text-lg border border-primary/10 shadow-sm">
-                        {u.displayName?.[0]}
-                      </div>
-                      <div>
-                        <span className="font-black text-gray-900 block tracking-tight">{u.displayName}</span>
-                        {(u as any).isPending && (
-                          <span className="text-[9px] text-amber-600 font-black uppercase tracking-widest bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
-                            Pendente
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5 text-sm text-gray-500 font-medium">{u.email}</td>
-                  <td className="px-6 py-5">
-                    <span className={cn(
-                      "px-4 py-1.5 rounded-full text-[10px] font-black capitalize inline-flex items-center gap-2 border",
-                      u.role === 'admin' ? "bg-primary/10 text-primary border-primary/20" : "bg-secondary/10 text-secondary border-secondary/20"
-                    )}>
-                      <div className={cn("h-1.5 w-1.5 rounded-full", u.role === 'admin' ? "bg-primary" : "bg-secondary")} />
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5 text-right flex items-center justify-end gap-2">
-                    <Button 
-                      variant="ghost" 
-                      className="text-[10px] font-black uppercase tracking-widest text-primary hover:bg-primary/5 rounded-xl px-4 py-2" 
-                      onClick={() => toggleRole(u)}
-                    >
-                      Alterar Nível
-                    </Button>
-                    <button 
-                      className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors border border-blue-100"
-                      onClick={() => {
-                        setNewName(u.displayName);
-                        setNewEmail(u.email);
-                        setIsEditingUser(u);
-                      }}
-                      title="Editar"
-                    >
-                      <Edit2 size={18} />
-                    </button>
-                    <button 
-                      className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl transition-colors border border-red-100"
-                      onClick={() => setConfirmDeleteUser(u.uid)}
-                      title="Excluir"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {filteredUsers.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-gray-400">
-                    Nenhum usuário encontrado.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* Add User Modal */}
-      {isAdding && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="max-w-md w-full"
-          >
-            <Card className="p-6 space-y-6 shadow-2xl">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">Novo Usuário</h3>
-                <button onClick={() => setIsAdding(false)} className="text-gray-400 hover:text-gray-600">
-                  <X size={24} />
-                </button>
-              </div>
-              <form onSubmit={handleAddUser} className="space-y-4">
-                <Input 
-                  label="Nome Completo" 
-                  value={newName} 
-                  onChange={e => setNewName(e.target.value)} 
-                  required 
-                  placeholder="Ex: João Silva" 
-                />
-                <Input 
-                  label="Email" 
-                  type="email"
-                  value={newEmail} 
-                  onChange={e => setNewEmail(e.target.value)} 
-                  required 
-                  placeholder="Ex: joao@empresa.com" 
-                />
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-gray-700">Nível de Acesso</label>
-                  <select 
-                    value={newRole}
-                    onChange={(e) => setNewRole(e.target.value as UserRole)}
-                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 outline-none focus:ring-2 focus:ring-primary transition-all bg-white"
-                  >
-                    <option value="vigilante">Vigilante</option>
-                    <option value="admin">Administrador</option>
-                  </select>
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <Button variant="secondary" className="flex-1" type="button" onClick={() => setIsAdding(false)}>
-                    Cancelar
-                  </Button>
-                  <Button type="submit" className="flex-1" disabled={isSubmitting}>
-                    {isSubmitting ? 'Cadastrando...' : 'Cadastrar'}
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Edit User Modal */}
-      {isEditingUser && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="max-w-md w-full"
-          >
-            <Card className="p-6 space-y-6 shadow-2xl">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">Editar Usuário</h3>
-                <button onClick={() => setIsEditingUser(null)} className="text-gray-400 hover:text-gray-600">
-                  <X size={24} />
-                </button>
-              </div>
-              <form onSubmit={handleEditUser} className="space-y-4">
-                <Input 
-                  label="Nome Completo" 
-                  value={newName} 
-                  onChange={e => setNewName(e.target.value)} 
-                  required 
-                />
-                <Input 
-                  label="Email" 
-                  type="email"
-                  value={newEmail} 
-                  onChange={e => setNewEmail(e.target.value)} 
-                  required 
-                />
-                <Button 
-                  type="button" 
-                  variant="ghost" 
-                  onClick={handleResendInvite}
-                  disabled={isSubmitting}
-                  className="w-full text-sm text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100"
-                >
-                  <AlertCircle size={16} /> Reenviar Convite/Senha pro E-mail
-                </Button>
-                <div className="flex gap-3 pt-4">
-                  <Button variant="secondary" className="flex-1" type="button" onClick={() => setIsEditingUser(null)}>
-                    Cancelar
-                  </Button>
-                  <Button type="submit" className="flex-1" disabled={isSubmitting}>
-                    {isSubmitting ? 'Salvando...' : 'Atualizar'}
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Delete User Confirmation Modal */}
-      {confirmDeleteUser && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="max-w-sm w-full"
-          >
-            <Card className="p-6 text-center space-y-6 shadow-2xl">
-              <div className="h-16 w-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
-                <Trash2 size={32} />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-xl font-bold text-gray-900">Confirmar Exclusão</h3>
-                <p className="text-gray-500">Tem certeza que deseja remover este usuário?</p>
-              </div>
-              <div className="flex gap-3">
-                <Button variant="secondary" className="flex-1" onClick={() => setConfirmDeleteUser(null)}>Cancelar</Button>
-                <Button variant="danger" className="flex-1" onClick={handleDeleteUser} disabled={isSubmitting}>
-                  {isSubmitting ? 'Excluindo...' : 'Excluir'}
-                </Button>
-              </div>
-            </Card>
-          </motion.div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LogsView() {
-  const [logs, setLogs] = useState<ScanLog[]>([]);
-  const [search, setSearch] = useState('');
-  const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [showFilters, setShowFilters] = useState(false);
-  const [selectedVigilante, setSelectedVigilante] = useState<string>('all');
-  const [selectedLocal, setSelectedLocal] = useState<string>('all');
-  const [uniqueVigilantes, setUniqueVigilantes] = useState<{id: string, name: string}[]>([]);
-  const [uniqueLocais, setUniqueLocais] = useState<{id: string, name: string}[]>([]);
-
-  useEffect(() => {
-    const fetchLogs = async () => {
-      // Construir datas sem erros de timezone: usar string ISO local
-      const [sy, sm, sd] = startDate.split('-').map(Number);
-      const [ey, em, ed] = endDate.split('-').map(Number);
-      const start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
-      const end   = new Date(ey, em - 1, ed, 23, 59, 59, 999);
-
-      try {
-        const url = `/logs?startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
-        const logsData = await api.get<ScanLog[]>(url) || [];
-        setLogs(logsData);
-
-        const vMap = new Map();
-        const lMap = new Map();
-        logsData.forEach(log => {
-          vMap.set(log.userId, log.userName);
-          lMap.set(log.locationId, log.locationName);
-        });
-        setUniqueVigilantes(Array.from(vMap.entries()).map(([id, name]) => ({ id, name })));
-        setUniqueLocais(Array.from(lMap.entries()).map(([id, name]) => ({ id, name })));
-      } catch (err) {
-        console.error('Erro ao buscar logs:', err);
-      }
-    };
-
-    fetchLogs();
-  }, [startDate, endDate]);
-
-  const filteredLogs = logs.filter(log => {
-    const matchesSearch = 
-      log.userName?.toLowerCase().includes(search.toLowerCase()) || 
-      log.locationName?.toLowerCase().includes(search.toLowerCase());
-    const matchesVigilante = selectedVigilante === 'all' || log.userId === selectedVigilante;
-    const matchesLocal = selectedLocal === 'all' || log.locationId === selectedLocal;
-    return matchesSearch && matchesVigilante && matchesLocal;
-  });
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-gray-900 tracking-tight">Relatórios de Rondas</h2>
-          <p className="text-gray-500 font-medium">Consulte relatórios e exporte dados históricos.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button 
-            variant="secondary" 
-            onClick={() => setShowFilters(!showFilters)}
-            className={cn("py-3 px-6 rounded-2xl gap-2", showFilters && "bg-indigo-50 text-indigo-600 border-indigo-200")}
-          >
-            <Filter size={18} />
-            {showFilters ? 'Ocultar Filtros' : 'Filtros Avançados'}
-          </Button>
-          <Button onClick={() => window.print()} variant="ghost" className="py-3 px-6 rounded-2xl text-gray-500">
-            <Download size={18} />
-            Exportar
-          </Button>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-          <input 
-            type="text"
-            placeholder="Buscar por vigilante ou local..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-12 pr-4 py-4 bg-white border border-gray-100 rounded-3xl outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all shadow-sm font-medium placeholder:text-gray-400"
-          />
-        </div>
-
-        <AnimatePresence>
-          {showFilters && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
-            >
-              <Card className="p-6 bg-primary/5 border-primary/10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 rounded-3xl">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-2 ml-1">
-                    <CalendarIcon size={12} /> Início
-                  </label>
-                  <input 
-                    type="date" 
-                    value={startDate} 
-                    onChange={e => setStartDate(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white border border-primary/10 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-primary/10 transition-all font-medium"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-2 ml-1">
-                    <CalendarIcon size={12} /> Fim
-                  </label>
-                  <input 
-                    type="date" 
-                    value={endDate} 
-                    onChange={e => setEndDate(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white border border-primary/10 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-primary/10 transition-all font-medium"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-2 ml-1">
-                    <Users size={12} /> Vigilante
-                  </label>
-                  <select 
-                    value={selectedVigilante}
-                    onChange={e => setSelectedVigilante(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white border border-primary/10 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-primary/10 transition-all font-medium appearance-none"
-                  >
-                    <option value="all">Todos os Vigilantes</option>
-                    {uniqueVigilantes.map(v => (
-                      <option key={v.id} value={v.id}>{v.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-2 ml-1">
-                    <MapPin size={12} /> Local
-                  </label>
-                  <select 
-                    value={selectedLocal}
-                    onChange={e => setSelectedLocal(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white border border-primary/10 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-primary/10 transition-all font-medium appearance-none"
-                  >
-                    <option value="all">Todos os Locais</option>
-                    {uniqueLocais.map(l => (
-                      <option key={l.id} value={l.id}>{l.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <Card className="overflow-hidden border-none shadow-sm rounded-3xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50/50 border-b border-gray-100">
-              <tr>
-                <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Vigilante</th>
-                <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Local</th>
-                <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Data/Hora</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50 bg-white">
-              {filteredLogs.length === 0 ? (
-                <tr>
-                  <td colSpan={3} className="px-6 py-16 text-center text-gray-400">
-                    <div className="flex flex-col items-center gap-4">
-                      <Search size={48} className="opacity-20" />
-                      <p className="font-medium">Nenhum registro encontrado para os filtros selecionados.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50/30 transition-colors group">
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-4">
-                        <div className="h-11 w-11 rounded-2xl bg-primary/5 flex items-center justify-center text-primary font-black text-lg border border-primary/10 shadow-sm">
-                          {log.userName?.[0]}
-                        </div>
-                        <div>
-                          <p className="font-black text-gray-900 tracking-tight">{log.userName}</p>
-                          <p className="text-[10px] text-gray-400 font-medium">{log.userEmail}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-secondary" />
-                        <span className="font-bold text-gray-700">{log.locationName}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-5">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-black text-gray-900 tracking-tight">
-                          {format(new Date(log.timestamp), "dd/MM/yyyy")}
-                        </span>
-                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-                          {format(new Date(log.timestamp), "HH:mm:ss")}
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  );
-}
-

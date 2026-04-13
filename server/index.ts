@@ -7,8 +7,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initDB } from './db.js';
 import authRoutes from './auth/routes.js';
-import locaisRoutes from './routes/locais.js';
-import logsRoutes from './routes/logs.js';
+import companiesRoutes from './routes/companies.js';
+import pessoasRoutes from './routes/pessoas.js';
+import presencasRoutes from './routes/presencas.js';
+import treinamentosRoutes from './routes/treinamentos.js';
+import empresasTerceiroRoutes from './routes/empresasTerceiro.js';
 import usersRoutes from './routes/users.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -97,8 +100,8 @@ app.use(globalLimiter);
 // Middleware básico
 // ============================================================
 app.use(compression() as any);
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(express.json({ limit: '10mb' })); // 10mb para suportar upload de fotos em base64
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Remove header que revela tecnologia
 app.disable('x-powered-by');
@@ -107,8 +110,11 @@ app.disable('x-powered-by');
 // Rotas da API
 // ============================================================
 app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/locais', locaisRoutes);
-app.use('/api/logs', logsRoutes);
+app.use('/api/companies', companiesRoutes);
+app.use('/api/pessoas', pessoasRoutes);
+app.use('/api/presencas', presencasRoutes);
+app.use('/api/treinamentos', treinamentosRoutes);
+app.use('/api/empresas-terceiro', empresasTerceiroRoutes);
 app.use('/api/users', usersRoutes);
 
 // ============================================================
@@ -155,7 +161,7 @@ async function start() {
     app.listen(PORT, '0.0.0.0', () => {
       console.log('');
       console.log('🚀 ================================================');
-      console.log(`   RondaDigital Server iniciado!`);
+      console.log(`   Gestão de Terceiros - Server iniciado!`);
       console.log(`   Porta: ${PORT}`);
       console.log(`   Ambiente: ${process.env.NODE_ENV || 'development'}`);
       console.log(`   URL: ${APP_URL}`);

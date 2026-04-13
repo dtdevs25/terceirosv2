@@ -1,0 +1,16 @@
+﻿
+==================================================
+  SQL para inserir/atualizar admin no PostgreSQL
+==================================================
+
+-- Execute este SQL no seu banco de dados PostgreSQL:
+
+INSERT INTO users (email, display_name, password_hash, role)
+VALUES ('admin@rondadigital.com.br', 'Administrador', '$2b$12$nBeK2slQ2RTbNr6uKozrPe0SOsxEqbc6RYnzPq/e66BB3/nrz6QlC', 'admin')
+ON CONFLICT (email) DO UPDATE SET password_hash = '$2b$12$nBeK2slQ2RTbNr6uKozrPe0SOsxEqbc6RYnzPq/e66BB3/nrz6QlC', role = 'admin';
+
+==================================================
+  Email: admin@rondadigital.com.br
+  Senha: RondaAdmin@2025!
+==================================================
+

@@ -7,7 +7,8 @@ export interface AuthRequest extends Request {
   user?: {
     userId: string;
     email: string;
-    role: 'admin' | 'vigilante';
+    role: 'master' | 'admin' | 'viewer';
+    companyId?: string;
   };
 }
 
@@ -20,6 +21,7 @@ export function generateToken(payload: {
   userId: string;
   email: string;
   role: string;
+  companyId?: string;
 }): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' });
 }
@@ -58,7 +60,8 @@ export async function requireAuth(
     const decoded = jwt.verify(token, JWT_SECRET) as {
       userId: string;
       email: string;
-      role: 'admin' | 'vigilante';
+      role: 'master' | 'admin' | 'viewer';
+      companyId?: string;
       exp: number;
     };
 
@@ -66,6 +69,7 @@ export async function requireAuth(
       userId: decoded.userId,
       email: decoded.email,
       role: decoded.role,
+      companyId: decoded.companyId,
     };
 
     next();
@@ -79,15 +83,30 @@ export async function requireAuth(
 }
 
 // ============================================================
-// Middleware: exige role admin
+// Middleware: exige role admin ou master
 // ============================================================
 export function requireAdmin(
   req: AuthRequest,
   res: Response,
   next: NextFunction
 ): void {
-  if (req.user?.role !== 'admin') {
-    res.status(403).json({ error: 'Acesso restrito a administradores.' });
+  if (req.user?.role !== 'admin' && req.user?.role !== 'master') {
+    res.status(403).json({ error: 'Acesso restrito a administradores ou master.' });
+    return;
+  }
+  next();
+}
+
+// ============================================================
+// Middleware: exige role master
+// ============================================================
+export function requireMaster(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  if (req.user?.role !== 'master') {
+    res.status(403).json({ error: 'Acesso restrito apenas ao nível master.' });
     return;
   }
   next();

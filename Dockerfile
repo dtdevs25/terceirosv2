@@ -1,26 +1,31 @@
 FROM node:22-alpine
 
-# Definindo diretório de trabalho
+# Dependências do sistema para compilação de pacotes nativos
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
 
-# Copiar arquivos de dependências
+# Copia manifests de dependências primeiro (melhor cache de layers)
 COPY package*.json ./
 
-# Instalar dependências
+# Instala TODAS as dependências (incluindo devDependencies para o build)
 RUN npm ci
 
-# Copiar o restante dos arquivos (código fonte, configurações, etc)
+# Copia o restante do código-fonte
 COPY . .
 
-# Fazer o build do frontend gerando a pasta dist/
+# Faz o build do frontend React → dist/
 RUN npm run build
 
-# Expor a porta 3000 (ou a configurada em PORT)
+# Remove devDependencies após o build para reduzir tamanho da imagem
+RUN npm prune --production
+
+# Porta exposta
 EXPOSE 3000
 
-# Adicionar variáveis de ambiente padrões seguras (sobreponíveis via CapRover)
+# Variáveis de ambiente padrão (sobrepor via CapRover app env vars)
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Executar a API via TSX e servir o projeto final integrado
+# Inicia o servidor Node/Express com tsx (suporte a TypeScript em produção)
 CMD ["npx", "tsx", "server/index.ts"]

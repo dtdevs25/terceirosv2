@@ -1,0 +1,212 @@
+import { Router, Response } from 'express';
+import { requireAuth, AuthRequest } from '../auth/middleware.js';
+import { query, queryOne } from '../db.js';
+
+const router = Router();
+
+router.use(requireAuth);
+
+// Helper para calcular o status geral e verificar vencimentos
+function calculateStatus(liberadoAte: Date | null, asoVencimento: Date | null, treinamentos: { vencimento: Date }[]): 'liberado' | 'a_vencer' | 'bloqueado' {
+  const now = new Date();
+  
+  if (liberadoAte && liberadoAte < now) return 'bloqueado';
+  if (asoVencimento && asoVencimento < now) return 'bloqueado';
+  
+  for (const t of treinamentos) {
+    if (t.vencimento < now) return 'bloqueado';
+  }
+
+  const in30Days = new Date();
+  in30Days.setDate(in30Days.getDate() + 30);
+
+  if (asoVencimento && asoVencimento <= in30Days) return 'a_vencer';
+  for (const t of treinamentos) {
+    if (t.vencimento <= in30Days) return 'a_vencer';
+  }
+
+  return 'liberado';
+}
+
+// ============================================================
+// GET /api/pessoas - Lista visitantes e prestadores
+// ============================================================
+router.get('/', async (req: AuthRequest, res: Response) => {
+  try {
+    let pessoas;
+    if (req.user?.role === 'master') {
+      pessoas = await query(
+        `SELECT p.*, e.name as empresa_origem_nome, t.nome as atividade_nome 
+         FROM pessoas p
+         LEFT JOIN empresas_terceiro e ON p.empresa_origem_id = e.id
+         LEFT JOIN tipos_atividade t ON p.atividade_id = t.id
+         ORDER BY p.nome_completo ASC`
+      );
+    } else {
+      if (!req.user?.companyId) {
+        res.json([]);
+        return;
+      }
+      pessoas = await query(
+        `SELECT p.*, e.name as empresa_origem_nome, t.nome as atividade_nome 
+         FROM pessoas p
+         LEFT JOIN empresas_terceiro e ON p.empresa_origem_id = e.id
+         LEFT JOIN tipos_atividade t ON p.atividade_id = t.id
+         WHERE p.company_id = $1
+         ORDER BY p.nome_completo ASC`,
+        [req.user.companyId]
+      );
+    }
+
+    // Busca os treinamentos atrelados para calcular os vencimentos reais
+    const pessoasIds = pessoas.map((p: any) => p.id);
+    let treinamentosPorPessoa: Record<string, any[]> = {};
+
+    if (pessoasIds.length > 0) {
+      const links = await query(
+        `SELECT tp.*, t.nome, t.codigo 
+         FROM treinamentos_pessoa tp
+         JOIN tipos_treinamento t ON tp.treinamento_id = t.id
+         WHERE tp.pessoa_id = ANY($1)`,
+        [pessoasIds]
+      );
+
+      links.forEach((l: any) => {
+        if (!treinamentosPorPessoa[l.pessoa_id]) treinamentosPorPessoa[l.pessoa_id] = [];
+        treinamentosPorPessoa[l.pessoa_id].push({
+           treinamentoId: l.treinamento_id,
+           treinamentoNome: l.nome,
+           treinamentoCodigo: l.codigo,
+           dataRealizacao: l.data_realizacao,
+           dataVencimento: l.data_vencimento
+        });
+      });
+    }
+
+    const payload = pessoas.map((p: any) => {
+      // 1 ano para ASO via genérico, se o escopo for esse, senão usa lógica custom
+      let asoVencimento = null;
+      if (p.aso_data_realizacao) {
+         asoVencimento = new Date(p.aso_data_realizacao);
+         asoVencimento.setFullYear(asoVencimento.getFullYear() + 1); // Exemplo ASO = 12 meses
+      }
+      
+      const liberadoAteDate = p.liberado_ate ? new Date(p.liberado_ate) : null;
+      const tpps = treinamentosPorPessoa[p.id] || [];
+      const vencimentos = tpps.map(t => ({ vencimento: new Date(t.dataVencimento) }));
+
+      const statusAcesso = calculateStatus(liberadoAteDate, asoVencimento, vencimentos);
+
+      return {
+        id: p.id,
+        companyId: p.company_id,
+        tipoAcesso: p.tipo_acesso,
+        foto: p.foto,
+        nomeCompleto: p.nome_completo,
+        documento: p.documento,
+        empresaOrigemId: p.empresa_origem_id,
+        empresaOrigemNome: p.empresa_origem_nome,
+        responsavelInterno: p.responsavel_interno,
+        celularAutorizado: p.celular_autorizado,
+        notebookAutorizado: p.notebook_autorizado,
+        liberadoAte: p.liberado_ate,
+        descricaoAtividade: p.descricao_atividade,
+        atividadeId: p.atividade_id,
+        atividadeNome: p.atividade_nome,
+        asoDataRealizacao: p.aso_data_realizacao,
+        epiObrigatorio: p.epi_obrigatorio,
+        epiDescricao: p.epi_descricao,
+        statusAcesso,
+        treinamentos: tpps
+      };
+    });
+    
+    res.json(payload);
+  } catch (err) {
+    console.error('GET /pessoas error:', err);
+    res.status(500).json({ error: 'Erro ao buscar pessoas.' });
+  }
+});
+
+// A partir daqui, apenas Master/Admin podem modificar
+router.use((req: AuthRequest, res: Response, next) => {
+  if (req.user?.role === 'viewer') {
+    res.status(403).json({ error: 'Você não tem permissão para esta ação.' });
+    return;
+  }
+  next();
+});
+
+// ============================================================
+// POST /api/pessoas
+// ============================================================
+router.post('/', async (req: AuthRequest, res: Response) => {
+  try {
+    const {
+      companyId, tipoAcesso, foto, nomeCompleto, documento, empresaOrigemId, responsavelInterno,
+      celularAutorizado, notebookAutorizado, liberadoAte, descricaoAtividade,
+      atividadeId, asoDataRealizacao, epiObrigatorio, epiDescricao,
+      treinamentos // ARRAY de treinamentos [{ treinamentoId, dataRealizacao }]
+    } = req.body;
+
+    let targetCompany = companyId;
+    if (req.user?.role === 'admin') {
+      targetCompany = req.user.companyId;
+    }
+
+    if (!targetCompany || !nomeCompleto || !documento || !responsavelInterno) {
+      res.status(400).json({ error: 'Dados obrigatórios ausentes.' }); return;
+    }
+
+    // Insere a pessoa
+    const pessoa = await queryOne<{ id: string }>(
+      `INSERT INTO pessoas (
+        company_id, tipo_acesso, foto, nome_completo, documento, empresa_origem_id, responsavel_interno,
+        celular_autorizado, notebook_autorizado, liberado_ate, descricao_atividade,
+        atividade_id, aso_data_realizacao, epi_obrigatorio, epi_descricao, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      RETURNING id`,
+      [
+        targetCompany, tipoAcesso, foto, nomeCompleto, documento, empresaOrigemId || null, responsavelInterno,
+        celularAutorizado, notebookAutorizado, liberadoAte || null, descricaoAtividade,
+        tipoAcesso === 'prestador' ? (atividadeId || null) : null,
+        tipoAcesso === 'prestador' ? (asoDataRealizacao || null) : null,
+        tipoAcesso === 'prestador' ? epiObrigatorio : false,
+        tipoAcesso === 'prestador' ? epiDescricao : null,
+        req.user!.userId
+      ]
+    );
+
+    // Salva os treinamentos e calcula datas de vencimento automaticamente baseada na validade!
+    if (pessoa && tipoAcesso === 'prestador' && Array.isArray(treinamentos)) {
+      for (const tr of treinamentos) {
+         if (!tr.treinamentoId || !tr.dataRealizacao) continue;
+         
+         const tipo = await queryOne<{ validade_meses: number }>('SELECT validade_meses FROM tipos_treinamento WHERE id = $1', [tr.treinamentoId]);
+         if (!tipo) continue;
+
+         const dateR = new Date(tr.dataRealizacao);
+         const dateV = new Date(dateR);
+         dateV.setMonth(dateV.getMonth() + tipo.validade_meses);
+
+         await query(
+           `INSERT INTO treinamentos_pessoa (pessoa_id, treinamento_id, data_realizacao, data_vencimento) 
+            VALUES ($1, $2, $3, $4)`,
+           [pessoa.id, tr.treinamentoId, tr.dataRealizacao, dateV.toISOString().split('T')[0]]
+         );
+      }
+    }
+
+    res.status(201).json(pessoa);
+  } catch (err: any) {
+    console.error('POST /pessoas error:', err);
+    res.status(500).json({ error: 'Erro ao salvar pessoa.' });
+  }
+});
+
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+   // apenas soft/hard delete
+   res.json({ message: 'delete here' });
+});
+
+export default router;

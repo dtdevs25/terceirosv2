@@ -1,112 +1,49 @@
-// ============================================================
-// Cliente HTTP centralizado — substitui Firebase SDK
-// Todos os dados são buscados via REST API com JWT
-// ============================================================
-
 const API_BASE = '/api';
 
-export interface ApiError {
-  error: string;
-  status: number;
+function getToken(): string | null {
+  return localStorage.getItem('auth_token');
 }
 
-// ============================================================
-// Fetch com autenticação JWT automática
-// ============================================================
-export async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const token = localStorage.getItem('ronda_token');
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  });
-
-  // Token expirado ou inválido → logout automático
-  if (response.status === 401) {
-    localStorage.removeItem('ronda_token');
-    localStorage.removeItem('ronda_user');
-    window.location.href = '/';
-    throw { error: 'Sessão expirada. Faça login novamente.', status: 401 } as ApiError;
-  }
-
-  if (!response.ok) {
-    let errorMsg = `Erro HTTP ${response.status}`;
-    try {
-      const body = await response.json();
-      errorMsg = body.error || errorMsg;
-    } catch {
-      // ignora se não for JSON
-    }
-    throw { error: errorMsg, status: response.status } as ApiError;
-  }
-
-  const text = await response.text();
-  if (!text) return null as T;
-  return JSON.parse(text) as T;
-}
-
-// ============================================================
-// Métodos HTTP simplificados
-// ============================================================
-export const api = {
-  get<T>(path: string) {
-    return apiFetch<T>(path, { method: 'GET' });
-  },
-
-  post<T>(path: string, body: unknown) {
-    return apiFetch<T>(path, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
-  },
-
-  put<T>(path: string, body: unknown) {
-    return apiFetch<T>(path, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    });
-  },
-
-  delete<T>(path: string) {
-    return apiFetch<T>(path, { method: 'DELETE' });
-  },
-};
-
-// ============================================================
-// Auth helpers
-// ============================================================
-export function getStoredToken(): string | null {
-  return localStorage.getItem('ronda_token');
-}
-
-export function getStoredUser(): any | null {
-  const raw = localStorage.getItem('ronda_user');
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+export function getStoredUser(): any {
+  const json = localStorage.getItem('auth_user');
+  if (!json) return null;
+  try { return JSON.parse(json); } catch { return null; }
 }
 
 export function saveSession(token: string, user: any) {
-  localStorage.setItem('ronda_token', token);
-  localStorage.setItem('ronda_user', JSON.stringify(user));
+  localStorage.setItem('auth_token', token);
+  localStorage.setItem('auth_user', JSON.stringify(user));
 }
 
 export function clearSession() {
-  localStorage.removeItem('ronda_token');
-  localStorage.removeItem('ronda_user');
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('auth_user');
 }
+
+async function request<T>(method: string, path: string, body?: any): Promise<T> {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!res.ok) {
+    let err: any = { error: `HTTP ${res.status}` };
+    try { err = await res.json(); } catch {}
+    throw err;
+  }
+
+  if (res.status === 204) return undefined as any;
+  return res.json();
+}
+
+export const api = {
+  get: <T>(path: string) => request<T>('GET', path),
+  post: <T>(path: string, body: any) => request<T>('POST', path, body),
+  put: <T>(path: string, body: any) => request<T>('PUT', path, body),
+  delete: <T>(path: string) => request<T>('DELETE', path),
+};

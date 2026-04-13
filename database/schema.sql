@@ -1,12 +1,20 @@
 -- ============================================================
--- RondaDigital - Schema PostgreSQL
--- ============================================================
--- Execute este script UMA VEZ no seu banco de dados:
--- psql $DATABASE_URL -f database/schema.sql
+-- Terceirizacao - Schema PostgreSQL (Gestão Corporativa/Visitantes)
 -- ============================================================
 
--- Extensão para UUIDs
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ============================================================
+-- TABELA: companies (Contratantes / Sistema Multi-Empresa)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS companies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) UNIQUE NOT NULL,
+  cnpj VARCHAR(20) UNIQUE,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
 -- ============================================================
 -- TABELA: users
@@ -16,8 +24,8 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) UNIQUE NOT NULL,
   display_name VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  role VARCHAR(50) NOT NULL DEFAULT 'vigilante' 
-    CHECK (role IN ('admin', 'vigilante')),
+  role VARCHAR(50) NOT NULL DEFAULT 'viewer' CHECK (role IN ('master', 'admin', 'viewer')),
+  company_id UUID REFERENCES companies(id) ON DELETE CASCADE, -- Master pode ser nulo
   reset_token VARCHAR(255),
   reset_token_expires TIMESTAMPTZ,
   is_active BOOLEAN DEFAULT TRUE,
@@ -26,33 +34,110 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- ============================================================
--- TABELA: locations (pontos de ronda)
+-- TABELA: empresas_terceiro (Origem do Visitante/Prestador)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS locations (
+CREATE TABLE IF NOT EXISTS empresas_terceiro (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, -- Isolamento
   name VARCHAR(255) NOT NULL,
-  description TEXT DEFAULT '',
-  qr_value VARCHAR(255) UNIQUE NOT NULL,
-  is_active BOOLEAN DEFAULT TRUE,
+  cnpj VARCHAR(20),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(company_id, name)
+);
+
+-- ============================================================
+-- TABELA: tipos_treinamento (Global e Personalizado)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS tipos_treinamento (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nome VARCHAR(255) NOT NULL,
+  codigo VARCHAR(100) NOT NULL,
+  validade_meses INT NOT NULL DEFAULT 12,
+  escopo VARCHAR(20) NOT NULL DEFAULT 'personalizado' CHECK (escopo IN ('global', 'personalizado')),
+  company_id UUID REFERENCES companies(id) ON DELETE CASCADE, -- Nulo se for global
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================================
--- TABELA: scan_logs (registros de ronda)
+-- TABELA: tipos_atividade (Profissões/Cargos do Terceirizado)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS scan_logs (
+CREATE TABLE IF NOT EXISTS tipos_atividade (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  location_id UUID NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
-  user_email VARCHAR(255) NOT NULL,
-  user_name VARCHAR(255) NOT NULL,
-  location_name VARCHAR(255) NOT NULL,
-  scanned_at TIMESTAMPTZ DEFAULT NOW()
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  nome VARCHAR(255) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(company_id, nome)
 );
 
 -- ============================================================
--- TABELA: token_blacklist (tokens invalidados no logout)
+-- TABELA: atividade_treinamentos (Obrigatoriedades)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS atividade_treinamentos (
+  atividade_id UUID NOT NULL REFERENCES tipos_atividade(id) ON DELETE CASCADE,
+  treinamento_id UUID NOT NULL REFERENCES tipos_treinamento(id) ON DELETE CASCADE,
+  PRIMARY KEY (atividade_id, treinamento_id)
+);
+
+-- ============================================================
+-- TABELA: pessoas (Visitantes e Prestadores)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS pessoas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  tipo_acesso VARCHAR(50) NOT NULL CHECK (tipo_acesso IN ('visitante', 'prestador')),
+  
+  -- Dados Obrigatórios Base
+  foto TEXT, -- base64 ou URL path
+  nome_completo VARCHAR(255) NOT NULL,
+  documento VARCHAR(20) NOT NULL, -- RG ou CPF
+  empresa_origem_id UUID REFERENCES empresas_terceiro(id) ON DELETE SET NULL,
+  responsavel_interno VARCHAR(255) NOT NULL,
+  
+  -- Permissões
+  celular_autorizado BOOLEAN NOT NULL DEFAULT FALSE,
+  notebook_autorizado BOOLEAN NOT NULL DEFAULT FALSE,
+  liberado_ate TIMESTAMPTZ,
+  descricao_atividade TEXT,
+
+  -- Dados Prestador (ASO e EPI)
+  atividade_id UUID REFERENCES tipos_atividade(id) ON DELETE SET NULL,
+  aso_data_realizacao DATE,
+  epi_obrigatorio BOOLEAN DEFAULT FALSE,
+  epi_descricao TEXT,
+
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- TABELA: treinamentos_pessoa
+-- ============================================================
+CREATE TABLE IF NOT EXISTS treinamentos_pessoa (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pessoa_id UUID NOT NULL REFERENCES pessoas(id) ON DELETE CASCADE,
+  treinamento_id UUID NOT NULL REFERENCES tipos_treinamento(id) ON DELETE CASCADE,
+  data_realizacao DATE NOT NULL,
+  data_vencimento DATE NOT NULL, -- Calculado e armazenado
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- TABELA: presenca_logs
+-- ============================================================
+CREATE TABLE IF NOT EXISTS presenca_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pessoa_id UUID NOT NULL REFERENCES pessoas(id) ON DELETE CASCADE,
+  viewer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL CHECK (status IN ('entrada', 'saida')),
+  timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- TABELA: token_blacklist
 -- ============================================================
 CREATE TABLE IF NOT EXISTS token_blacklist (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -64,29 +149,14 @@ CREATE TABLE IF NOT EXISTS token_blacklist (
 -- ============================================================
 -- ÍNDICES para performance
 -- ============================================================
-CREATE INDEX IF NOT EXISTS idx_scan_logs_user_id 
-  ON scan_logs(user_id);
-
-CREATE INDEX IF NOT EXISTS idx_scan_logs_location_id 
-  ON scan_logs(location_id);
-
-CREATE INDEX IF NOT EXISTS idx_scan_logs_scanned_at 
-  ON scan_logs(scanned_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_users_email 
-  ON users(email);
-
-CREATE INDEX IF NOT EXISTS idx_users_reset_token 
-  ON users(reset_token) WHERE reset_token IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_token_blacklist_hash
-  ON token_blacklist(token_hash);
-
-CREATE INDEX IF NOT EXISTS idx_token_blacklist_expires
-  ON token_blacklist(expires_at);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_pessoas_company ON pessoas(company_id);
+CREATE INDEX IF NOT EXISTS idx_pessoas_documento ON pessoas(documento);
+CREATE INDEX IF NOT EXISTS idx_treinamentos_vencimento ON treinamentos_pessoa(data_vencimento);
+CREATE INDEX IF NOT EXISTS idx_presenca_timestamp ON presenca_logs(timestamp DESC);
 
 -- ============================================================
--- FUNÇÃO: atualiza updated_at automaticamente
+-- ATUALIZAÇÃO AUTOMÁTICA DE updated_at
 -- ============================================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -96,16 +166,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER update_users_updated_at
-  BEFORE UPDATE ON users
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE OR REPLACE TRIGGER update_locations_updated_at
-  BEFORE UPDATE ON locations
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- ============================================================
--- LIMPEZA AUTOMÁTICA: token_blacklist expirados
--- (Executar periodicamente ou usar pg_cron)
--- DELETE FROM token_blacklist WHERE expires_at < NOW();
--- ============================================================
+CREATE OR REPLACE TRIGGER update_companies_timestamp BEFORE UPDATE ON companies FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE OR REPLACE TRIGGER update_users_timestamp BEFORE UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE OR REPLACE TRIGGER update_empresas_terceiro_timestamp BEFORE UPDATE ON empresas_terceiro FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE OR REPLACE TRIGGER update_tipos_treinamento_timestamp BEFORE UPDATE ON tipos_treinamento FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE OR REPLACE TRIGGER update_tipos_atividade_timestamp BEFORE UPDATE ON tipos_atividade FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE OR REPLACE TRIGGER update_pessoas_timestamp BEFORE UPDATE ON pessoas FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();

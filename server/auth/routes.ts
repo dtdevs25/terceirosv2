@@ -48,10 +48,11 @@ router.post('/login', async (req: Request, res: Response) => {
       email: string;
       display_name: string;
       password_hash: string;
-      role: 'admin' | 'vigilante';
+      role: 'master' | 'admin' | 'viewer';
+      company_id: string;
       is_active: boolean;
     }>(
-      `SELECT id, email, display_name, password_hash, role, is_active
+      `SELECT id, email, display_name, password_hash, role, company_id, is_active
        FROM users 
        WHERE LOWER(email) = LOWER($1)`,
       [email.trim()]
@@ -80,6 +81,7 @@ router.post('/login', async (req: Request, res: Response) => {
       userId: user.id,
       email: user.email,
       role: user.role,
+      companyId: user.company_id,
     });
 
     res.json({
@@ -89,6 +91,7 @@ router.post('/login', async (req: Request, res: Response) => {
         email: user.email,
         displayName: user.display_name,
         role: user.role,
+        companyId: user.company_id,
         createdAt: new Date().toISOString(),
       },
     });
@@ -128,12 +131,15 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       id: string;
       email: string;
       display_name: string;
-      role: 'admin' | 'vigilante';
+      role: 'master' | 'admin' | 'viewer';
+      company_id: string;
+      company_name: string;
       created_at: string;
     }>(
-      `SELECT id, email, display_name, role, created_at
-       FROM users
-       WHERE id = $1 AND is_active = TRUE`,
+      `SELECT u.id, u.email, u.display_name, u.role, u.company_id, c.name as company_name, u.created_at
+       FROM users u
+       LEFT JOIN companies c ON u.company_id = c.id
+       WHERE u.id = $1 AND u.is_active = TRUE`,
       [req.user!.userId]
     );
 
@@ -147,6 +153,8 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       email: user.email,
       displayName: user.display_name,
       role: user.role,
+      companyId: user.company_id,
+      companyName: user.company_name,
       createdAt: user.created_at,
     });
   } catch (err) {
