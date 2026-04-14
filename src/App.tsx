@@ -142,7 +142,7 @@ function Modal({ title, onClose, children, size = 'md' }: {
   );
 }
 
-function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+function Card({ children, className }: { children: React.ReactNode; className?: string; key?: React.Key }) {
   return <div className={cn('bg-white rounded-2xl border border-slate-100 shadow-sm', className)}>{children}</div>;
 }
 
@@ -195,9 +195,12 @@ function LoginPage({ onLogin }: { onLogin: (user: UserProfile) => void }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#001A33]">
+      {/* Dark blue background with subtle gradient */}
+      <div className="absolute inset-0 bg-gradient-to-br from-[#000d1a] via-[#001A33] to-[#000a14]" />
+
       {/* Background Decor */}
-      <div className="absolute inset-0 bg-grid-slate-900 opacity-30" />
+      <div className="absolute inset-0 bg-grid-tech opacity-30" />
       
       {/* Background glows */}
       <motion.div 
@@ -206,7 +209,16 @@ function LoginPage({ onLogin }: { onLogin: (user: UserProfile) => void }) {
           opacity: [0.3, 0.5, 0.3] 
         }}
         transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] bg-blue-400/20" 
+        className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] bg-blue-500/20 mix-blend-screen" 
+      />
+      
+      <motion.div 
+        animate={{ 
+          scale: [1, 1.2, 1],
+          opacity: [0.2, 0.4, 0.2] 
+        }}
+        transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] rounded-full blur-[150px] bg-sky-400/10 mix-blend-screen" 
       />
 
       <motion.div 
@@ -1153,60 +1165,356 @@ function AtividadesView({ profile }: { profile: UserProfile }) {
   );
 }
 
-// ─── Companies View (Master) ──────────────────────────────────────────────────
+// ─── Companies View (Master + Admin) ─────────────────────────────────────────
 
-function CompaniesView() {
-  const CompanyForm = ({ item, onSave, onClose, companies }: { item: Company | null; onSave: () => void; onClose: () => void; companies: Company[] }) => {
-    const [name, setName] = useState(item?.name || '');
-    const [cnpj, setCnpj] = useState(item?.cnpj || '');
-    const [parentId, setParentId] = useState(item?.parentId || '');
-    const [saving, setSaving] = useState(false);
-    const handleSubmit = async (e: React.FormEvent) => {
-      e.preventDefault(); setSaving(true);
-      try {
-        const payload = { name, cnpj, parentId: parentId || null };
-        if (item) await api.put(`/companies/${item.id}`, payload);
-        else await api.post('/companies', payload);
-        onSave();
-      } catch (err: any) { alert(err.error || 'Erro.'); } finally { setSaving(false); }
-    };
-    return (
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Select label="Empresa Matriz / Mandante" value={parentId} onChange={setParentId}>
-          <option value="">— Nenhuma (Esta é a Matriz) —</option>
-          {companies.filter(c => c.id !== item?.id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </Select>
-        <Input label="Nome da Unidade / Filial" value={name} onChange={setName} required placeholder="Ex: Matriz Itaquera, Filial Santos..." />
-        <Input label="CNPJ" value={cnpj} onChange={setCnpj} placeholder="00.000.000/0000-00" />
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar'}</Button>
-        </div>
-      </form>
-    );
+function CompaniesView({ profile }: { profile: UserProfile }) {
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [allAdmins, setAllAdmins] = useState<UserProfile[]>([]);
+  const [linkedAdmins, setLinkedAdmins] = useState<Record<string, UserProfile[]>>({});
+
+  // Modals
+  const [showNewCompany, setShowNewCompany] = useState(false);
+  const [showBranchFor, setShowBranchFor] = useState<Company | null>(null);   // parent company
+  const [showAdminsFor, setShowAdminsFor] = useState<Company | null>(null);   // company managing admins
+
+  // Forms
+  const [companyForm, setCompanyForm] = useState({ name: '', cnpj: '' });
+  const [branchForm, setBranchForm] = useState({ name: '', cnpj: '' });
+  const [saving, setSaving] = useState(false);
+  const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null);
+
+  useEffect(() => { fetchAll(); }, []);
+
+  const maskCNPJ = (v: string) => {
+    v = v.replace(/\D/g, '');
+    if (v.length > 14) v = v.slice(0, 14);
+    if (v.length > 12) return v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2}).*/, '$1.$2.$3/$4-$5');
+    if (v.length > 8)  return v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4}).*/,        '$1.$2.$3/$4');
+    if (v.length > 5)  return v.replace(/^(\d{2})(\d{3})(\d{3}).*/,               '$1.$2.$3');
+    if (v.length > 2)  return v.replace(/^(\d{2})(\d{3}).*/,                      '$1.$2');
+    return v;
   };
+
+  const fetchAll = async () => {
+    try {
+      const [comps, users] = await Promise.all([
+        api.get<Company[]>('/companies'),
+        profile.role === 'master' ? api.get<UserProfile[]>('/users') : Promise.resolve<UserProfile[]>([]),
+      ]);
+      setCompanies(comps || []);
+      if (profile.role === 'master') {
+        setAllAdmins((users || []).filter(u => u.role === 'admin' || u.role === 'viewer'));
+      }
+    } catch {}
+  };
+
+  const fetchLinkedAdmins = async (companyId: string) => {
+    try {
+      const admins = await api.get<UserProfile[]>(`/companies/${companyId}/admins`);
+      setLinkedAdmins(prev => ({ ...prev, [companyId]: admins || [] }));
+    } catch {}
+  };
+
+  const openAdminsModal = async (company: Company) => {
+    setShowAdminsFor(company);
+    await fetchLinkedAdmins(company.id);
+  };
+
+  const toggleAdmin = async (companyId: string, userId: string, isLinked: boolean) => {
+    setTogglingAdmin(userId);
+    try {
+      if (isLinked) {
+        await api.delete(`/companies/${companyId}/admins/${userId}`);
+      } else {
+        await api.post(`/companies/${companyId}/admins`, { userId });
+      }
+      await fetchLinkedAdmins(companyId);
+    } catch (err: any) {
+      alert(err.error || 'Erro ao alterar vínculo.');
+    } finally {
+      setTogglingAdmin(null);
+    }
+  };
+
+  const handleCreateCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/companies', {
+        name: companyForm.name,
+        cnpj: companyForm.cnpj.replace(/\D/g, ''),
+      });
+      setCompanyForm({ name: '', cnpj: '' });
+      setShowNewCompany(false);
+      fetchAll();
+    } catch (err: any) { alert(err.error || 'Erro ao criar empresa.'); }
+    finally { setSaving(false); }
+  };
+
+  const handleCreateBranch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showBranchFor) return;
+    setSaving(true);
+    try {
+      await api.post('/companies', {
+        name: branchForm.name,
+        cnpj: branchForm.cnpj.replace(/\D/g, ''),
+        parentId: showBranchFor.id,
+      });
+      setBranchForm({ name: '', cnpj: '' });
+      setShowBranchFor(null);
+      fetchAll();
+    } catch (err: any) { alert(err.error || 'Erro ao criar filial.'); }
+    finally { setSaving(false); }
+  };
+
+  const handleDeleteCompany = async (id: string) => {
+    if (!confirm('Excluir esta empresa? Todas as filiais e dados associados serão removidos.')) return;
+    try { await api.delete(`/companies/${id}`); fetchAll(); }
+    catch (err: any) { alert(err.error || 'Erro ao excluir.'); }
+  };
+
+  // Separar matrizes de filiais
+  const matrices = companies.filter(c => !c.parentId);
+  const branches = companies.filter(c => !!c.parentId);
+  const getBranches = (parentId: string) => branches.filter(b => b.parentId === parentId);
+
   return (
-    <SimpleListView<Company>
-      title="Empresas Mandantes" subtitle="Gerencie as empresas e unidades contratantes do sistema."
-      endpoint="/companies" icon={ShieldCheck}
-      columns={[
-        { label: 'Unidade / Filial', render: c => (
-          <div>
-            <span className="font-semibold block">{c.name}</span>
-            {c.parentId && (
-              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase">
-                Filial de: {items.find(parent => parent.id === c.parentId)?.name || '...'}
-              </span>
-            )}
-          </div>
-        )},
-        { label: 'CNPJ', render: c => c.cnpj || '—' },
-        { label: 'Status', render: c => <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', c.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>{c.isActive ? 'Ativa' : 'Inativa'}</span> },
-      ]}
-      renderForm={(item, onSave, onClose) => <CompanyForm item={item as any} onSave={onSave} onClose={onClose} companies={items} />}
-    />
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Empresas Contratantes</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {profile.role === 'master'
+              ? 'Cadastre empresas, vincule administradores e gerencie filiais.'
+              : 'Visualize suas empresas e cadastre filiais.'}
+          </p>
+        </div>
+        {profile.role === 'master' && (
+          <Button onClick={() => setShowNewCompany(true)}>
+            <Plus size={16} /> Nova Empresa
+          </Button>
+        )}
+      </div>
+
+      {/* Company Cards */}
+      <div className="space-y-4">
+        {matrices.length === 0 && (
+          <Card><EmptyState icon={ShieldCheck} title="Nenhuma empresa cadastrada"
+            subtitle={profile.role === 'master' ? 'Clique em "Nova Empresa" para começar.' : 'Aguarde o master vincular você a uma empresa.'} /></Card>
+        )}
+
+        {matrices.map(company => {
+          const compBranches = getBranches(company.id);
+          const linked = linkedAdmins[company.id] || [];
+
+          return (
+            <Card key={company.id} className="overflow-hidden">
+              {/* Company Header */}
+              <div className="p-5 flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center shrink-0 shadow-lg shadow-blue-200">
+                    <ShieldCheck size={22} className="text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">{company.name}</h2>
+                    {company.cnpj && (
+                      <p className="text-xs text-slate-400 font-mono mt-0.5">CNPJ: {company.cnpj}</p>
+                    )}
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full',
+                        company.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>
+                        {company.isActive ? 'Ativa' : 'Inativa'}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        {compBranches.length} {compBranches.length === 1 ? 'filial' : 'filiais'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {profile.role === 'master' && (
+                    <button
+                      onClick={() => openAdminsModal(company)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 transition-all"
+                    >
+                      <UserCog size={14} />
+                      Administradores
+                      {linked.length > 0 && (
+                        <span className="ml-1 bg-purple-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                          {linked.length}
+                        </span>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setBranchForm({ name: '', cnpj: '' }); setShowBranchFor(company); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all"
+                  >
+                    <Plus size={14} /> Filial
+                  </button>
+                  {profile.role === 'master' && (
+                    <button
+                      onClick={() => handleDeleteCompany(company.id)}
+                      className="p-1.5 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Branches List */}
+              {compBranches.length > 0 && (
+                <div className="border-t border-slate-100 divide-y divide-slate-50">
+                  {compBranches.map(branch => (
+                    <div key={branch.id} className="flex items-center justify-between px-5 py-3 bg-slate-50/60 hover:bg-slate-50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-6 h-6 rounded-lg bg-slate-200 flex items-center justify-center">
+                          <Building2 size={12} className="text-slate-500" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700">{branch.name}</p>
+                          {branch.cnpj && <p className="text-xs text-slate-400 font-mono">{branch.cnpj}</p>}
+                        </div>
+                        <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase ml-1">Filial</span>
+                      </div>
+                      {profile.role === 'master' && (
+                        <button
+                          onClick={() => handleDeleteCompany(branch.id)}
+                          className="p-1 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* ─── Modal: Nova Empresa (Master only) ─── */}
+      <AnimatePresence>
+        {showNewCompany && (
+          <Modal title="Nova Empresa Contratante" onClose={() => setShowNewCompany(false)}>
+            <form onSubmit={handleCreateCompany} className="space-y-4">
+              <div className="p-3 bg-blue-50 rounded-xl text-xs text-blue-700 font-medium">
+                ℹ️ Cadastre a empresa que irá receber terceiros e visitantes. Após criá-la, vincule os administradores responsáveis.
+              </div>
+              <Input label="Razão Social / Nome da Empresa" value={companyForm.name}
+                onChange={v => setCompanyForm(f => ({ ...f, name: v }))} required
+                placeholder="Ex: Acme Indústria e Comércio Ltda" />
+              <Input label="CNPJ" value={companyForm.cnpj}
+                onChange={v => setCompanyForm(f => ({ ...f, cnpj: maskCNPJ(v) }))}
+                placeholder="00.000.000/0000-00" />
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="ghost" onClick={() => setShowNewCompany(false)}>Cancelar</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Criando...' : 'Criar Empresa'}</Button>
+              </div>
+            </form>
+          </Modal>
+        )}
+      </AnimatePresence>
+
+      {/* ─── Modal: Nova Filial ─── */}
+      <AnimatePresence>
+        {showBranchFor && (
+          <Modal title={`Nova Filial — ${showBranchFor.name}`} onClose={() => setShowBranchFor(null)}>
+            <form onSubmit={handleCreateBranch} className="space-y-4">
+              <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 flex items-center gap-2">
+                <Building2 size={14} className="shrink-0 text-slate-400" />
+                Esta filial será vinculada a <strong>{showBranchFor.name}</strong>.
+              </div>
+              <Input label="Nome da Filial / Unidade" value={branchForm.name}
+                onChange={v => setBranchForm(f => ({ ...f, name: v }))} required
+                placeholder="Ex: Filial Santos, Unidade Centro..." />
+              <Input label="CNPJ" value={branchForm.cnpj}
+                onChange={v => setBranchForm(f => ({ ...f, cnpj: maskCNPJ(v) }))}
+                placeholder="00.000.000/0000-00" />
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="ghost" onClick={() => setShowBranchFor(null)}>Cancelar</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Criando...' : 'Criar Filial'}</Button>
+              </div>
+            </form>
+          </Modal>
+        )}
+      </AnimatePresence>
+
+      {/* ─── Modal: Gerenciar Administradores (Master only) ─── */}
+      <AnimatePresence>
+        {showAdminsFor && (
+          <Modal title={`Administradores — ${showAdminsFor.name}`} onClose={() => setShowAdminsFor(null)} size="lg">
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500">
+                Selecione quais usuários têm acesso a esta empresa. Administradores vinculados poderão cadastrar filiais, terceiros e visitantes.
+              </p>
+
+              {allAdmins.length === 0 ? (
+                <EmptyState icon={UserCog} title="Nenhum administrador cadastrado"
+                  subtitle="Cadastre usuários com nível Administrador primeiro." />
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {allAdmins.map(admin => {
+                    const linked = (linkedAdmins[showAdminsFor.id] || []).some(a => (a.uid || a.id) === (admin.uid || admin.id));
+                    const isToggling = togglingAdmin === (admin.uid || admin.id);
+                    return (
+                      <div key={admin.uid || admin.id}
+                        className={cn(
+                          'flex items-center justify-between p-3 rounded-xl border-2 transition-all',
+                          linked ? 'border-blue-200 bg-blue-50/50' : 'border-slate-100 bg-white hover:border-slate-200'
+                        )}>
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            'w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold',
+                            linked ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                          )}>
+                            {admin.displayName?.[0]?.toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{admin.displayName}</p>
+                            <p className="text-xs text-slate-400">{admin.email}</p>
+                          </div>
+                          <span className={cn('text-[10px] font-black px-2 py-0.5 rounded-full',
+                            admin.role === 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600')}>
+                            {admin.role === 'admin' ? 'Admin' : 'Viewer'}
+                          </span>
+                        </div>
+                        <button
+                          disabled={isToggling}
+                          onClick={() => toggleAdmin(showAdminsFor.id, admin.uid || admin.id || '', linked)}
+                          className={cn(
+                            'relative w-12 h-6 rounded-full transition-all flex-shrink-0',
+                            linked ? 'bg-blue-600' : 'bg-slate-200',
+                            isToggling && 'opacity-50 cursor-not-allowed'
+                          )}>
+                          <div className={cn(
+                            'absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all',
+                            linked ? 'left-7' : 'left-1'
+                          )} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex justify-end pt-2">
+                <Button onClick={() => setShowAdminsFor(null)}>Fechar</Button>
+              </div>
+            </div>
+          </Modal>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
+
 
 
 // ─── Usuários View ────────────────────────────────────────────────────────────
@@ -1436,7 +1744,7 @@ export default function App() {
                 {activeTab === 'empresas_terceiro' && <EmpresasTerceiroView profile={profile} />}
                 {activeTab === 'treinamentos'     && <TreinamentosView profile={profile} />}
                 {activeTab === 'atividades'       && <AtividadesView profile={profile} />}
-                {activeTab === 'companies'        && profile.role === 'master' && <CompaniesView />}
+                {activeTab === 'companies'        && (profile.role === 'master' || profile.role === 'admin') && <CompaniesView profile={profile} />}
                 {activeTab === 'usuarios'         && <UsuariosView profile={profile} />}
               </motion.div>
             </AnimatePresence>

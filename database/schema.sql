@@ -179,3 +179,25 @@ CREATE OR REPLACE TRIGGER update_pessoas_timestamp BEFORE UPDATE ON pessoas FOR 
 -- ============================================================
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES companies(id) ON DELETE CASCADE;
 
+-- ============================================================
+-- TABELA: user_companies (Vínculo N:N Usuário ↔ Empresa)
+-- Permite que um administrador gerencie múltiplas empresas
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_companies (
+  user_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  assigned_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (user_id, company_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_companies_user ON user_companies(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_companies_company ON user_companies(company_id);
+
+-- Migração: popula vínculos de admins/viewers existentes a partir do company_id atual
+INSERT INTO user_companies (user_id, company_id)
+SELECT id, company_id
+FROM users
+WHERE company_id IS NOT NULL
+  AND role IN ('admin', 'viewer')
+ON CONFLICT DO NOTHING;
+

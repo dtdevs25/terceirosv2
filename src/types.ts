@@ -4,6 +4,7 @@ export type StatusAcesso = 'liberado' | 'a_vencer' | 'bloqueado';
 
 export interface Company {
   id: string;
+  parentId?: string | null;
   name: string;
   cnpj?: string;
   isActive: boolean;

@@ -48,7 +48,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
          ORDER BY u.display_name ASC`
       );
     } else {
-      // Admin vê apenas da sua companhia
+      // Admin vê usuários de TODAS as empresas vinculadas (e suas filiais)
       users = await query<{
         id: string;
         email: string;
@@ -59,12 +59,17 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         is_active: boolean;
         created_at: string;
       }>(
-        `SELECT u.id, u.email, u.display_name, u.role, u.company_id, c.name as company_name, u.is_active, u.created_at
+        `SELECT DISTINCT u.id, u.email, u.display_name, u.role, u.company_id, c.name as company_name, u.is_active, u.created_at
          FROM users u
          LEFT JOIN companies c ON u.company_id = c.id
-         WHERE u.company_id = $1
+         WHERE u.company_id IN (
+           SELECT company_id FROM user_companies WHERE user_id = $1
+           UNION
+           SELECT c2.id FROM companies c2
+           WHERE c2.parent_id IN (SELECT company_id FROM user_companies WHERE user_id = $1)
+         )
          ORDER BY u.display_name ASC`,
-        [req.user?.companyId]
+        [req.user?.userId]
       );
     }
 
@@ -108,7 +113,14 @@ router.post('/', async (req: AuthRequest, res: Response) => {
          res.status(403).json({ error: 'Administradores não podem criar contas master.' });
          return;
       }
-      targetCompanyId = req.user.companyId; // Força na própria companhia
+      // Admin usa a primeira empresa vinculada a ele (ou a que veio no body se válida)
+      const linkedCompanies = await query<{ company_id: string }>(
+        'SELECT company_id FROM user_companies WHERE user_id = $1 LIMIT 1',
+        [req.user.userId]
+      );
+      targetCompanyId = (companyId && linkedCompanies.some(lc => lc.company_id === companyId))
+        ? companyId
+        : (linkedCompanies[0]?.company_id || req.user.companyId);
     }
 
     // Verifica se email já existe
@@ -143,6 +155,14 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     if (!user) {
       res.status(500).json({ error: 'Erro ao criar usuário.' });
       return;
+    }
+
+    // Insere automaticamente o vínculo em user_companies
+    if (targetCompanyId && userRole !== 'master') {
+      await query(
+        `INSERT INTO user_companies (user_id, company_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [user.id, targetCompanyId]
+      );
     }
 
     // Gera token construtivo de senha (1 hora)
