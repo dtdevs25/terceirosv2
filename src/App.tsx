@@ -1229,6 +1229,13 @@ function CompaniesView({ profile }: { profile: UserProfile }) {
   const [saving, setSaving] = useState(false);
   const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null);
 
+  // Auto-fill CNPJ se o nome for 'Matriz'
+  useEffect(() => {
+    if (showBranchFor && branchForm.name.toLowerCase() === 'matriz') {
+      setBranchForm(f => ({ ...f, cnpj: maskCNPJ(showBranchFor.cnpj || '') }));
+    }
+  }, [branchForm.name, showBranchFor]);
+
   useEffect(() => { fetchAll(); }, []);
 
   const maskCNPJ = (v: string) => {
@@ -1416,28 +1423,51 @@ function CompaniesView({ profile }: { profile: UserProfile }) {
               {/* Branches List */}
               {compBranches.length > 0 && (
                 <div className="border-t border-slate-100 divide-y divide-slate-50">
-                  {compBranches.map(branch => (
-                    <div key={branch.id} className="flex items-center justify-between px-5 py-3 bg-slate-50/60 hover:bg-slate-50 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className="w-6 h-6 rounded-lg bg-slate-200 flex items-center justify-center">
-                          <Building2 size={12} className="text-slate-500" />
+                  {compBranches.map(branch => {
+                    const isMatriz = branch.name.toLowerCase() === 'matriz';
+                    return (
+                      <div key={branch.id} className={cn(
+                        "flex items-center justify-between px-5 py-4 transition-all border-l-4",
+                        isMatriz ? "bg-blue-50/30 border-blue-500" : "bg-slate-50/40 border-slate-100 hover:bg-slate-50"
+                      )}>
+                        <div className="flex items-center gap-4">
+                          <div className={cn(
+                            "w-9 h-9 rounded-xl flex items-center justify-center shadow-sm transition-transform hover:scale-105",
+                            isMatriz ? "bg-blue-600 text-white" : "bg-white text-slate-400 border border-slate-200"
+                          )}>
+                            {isMatriz ? <ShieldCheck size={18} /> : <Building2 size={18} />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-bold text-slate-800">{branch.name}</p>
+                              {isMatriz ? (
+                                <span className="text-[9px] font-black bg-blue-600 text-white px-2 py-0.5 rounded shadow-sm tracking-wide">
+                                  UNIDADE SEDE
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-black text-slate-400 border border-slate-200 px-1.5 py-0.5 rounded uppercase">
+                                  Filial
+                                </span>
+                              )}
+                            </div>
+                            {branch.cnpj && (
+                              <p className="text-[11px] text-slate-500 font-mono mt-0.5 tracking-tight">
+                                CNPJ: {maskCNPJ(branch.cnpj)}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-700">{branch.name}</p>
-                          {branch.cnpj && <p className="text-xs text-slate-400 font-mono">{branch.cnpj}</p>}
-                        </div>
-                        <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase ml-1">Filial</span>
+                        {profile.role === 'master' && (
+                          <button
+                            onClick={() => handleDeleteCompany(branch.id)}
+                            className="p-2 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
-                      {profile.role === 'master' && (
-                        <button
-                          onClick={() => handleDeleteCompany(branch.id)}
-                          className="p-1 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </Card>
