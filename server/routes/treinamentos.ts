@@ -56,6 +56,30 @@ router.use((req: AuthRequest, res: Response, next) => {
 // ============================================================
 router.post('/tipos', async (req: AuthRequest, res: Response) => {
   try {
+    const { nome, validadeMeses, escopo, companyId } = req.body;
+
+    if (!nome) {
+      res.status(400).json({ error: 'Nome é obrigatório.' });
+      return;
+    }
+
+    // Se admin, só pode criar para empresas que ele gerencia
+    if (req.user?.role === 'admin') {
+      const isAuthorized = await queryOne(
+        `SELECT 1 FROM user_companies WHERE user_id = $1 AND company_id = $2
+         UNION
+         SELECT 1 FROM companies WHERE parent_id IN (SELECT company_id FROM user_companies WHERE user_id = $1) AND id = $2`,
+        [req.user.userId, companyId]
+      );
+      if (!isAuthorized && escopo !== 'global') {
+        res.status(403).json({ error: 'Você não tem permissão para esta empresa.' });
+        return;
+      }
+    }
+
+    // Apenas master cria global
+    const finalEscopo = req.user?.role === 'master' ? (escopo || 'personalizado') : 'personalizado';
+
     // Gera código sequencial 001, 002, 003...
     const countRes = await queryOne<{ count: string }>('SELECT COUNT(*) as count FROM tipos_treinamento');
     const nextNum = parseInt(countRes?.count || '0') + 1;
@@ -65,7 +89,7 @@ router.post('/tipos', async (req: AuthRequest, res: Response) => {
       `INSERT INTO tipos_treinamento (nome, codigo, validade_meses, escopo, company_id)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [nome.trim(), autoCodigo, parseInt(validadeMeses), escopo, companyId]
+      [nome.trim(), autoCodigo, parseInt(validadeMeses || '12'), finalEscopo, companyId || null]
     );
 
     res.status(201).json(doc);

@@ -660,6 +660,31 @@ const emptyPessoaForm = (): PessoaForm => ({
   companyId: '',
 });
 
+function CompanySelectOptions({ companies }: { companies: Company[] }) {
+  const matrices = companies.filter(c => !c.parentId);
+  const filiais = companies.filter(c => c.parentId);
+
+  return (
+    <>
+      <option value="">— Selecione —</option>
+      {matrices.map(m => (
+        <optgroup key={m.id} label={m.name}>
+          <option value={m.id}>{m.name} (Matriz)</option>
+          {filiais.filter(f => f.parentId === m.id).map(f => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+      {/* Fallback para filiais cujas matrizes não foram carregadas ou não existem */}
+      {filiais.filter(f => !matrices.some(m => m.id === f.parentId)).map(c => (
+        <option key={c.id} value={c.id}>{c.name}</option>
+      ))}
+    </>
+  );
+}
+
 function PessoasView({ profile }: { profile: UserProfile }) {
   const [pessoas, setPessoas] = useState<Pessoa[]>([]);
   const [empresasTerceiro, setEmpresasTerceiro] = useState<EmpresaTerceiro[]>([]);
@@ -812,8 +837,7 @@ function PessoasView({ profile }: { profile: UserProfile }) {
                 <Input label="Responsável Interno" value={form.responsavelInterno} onChange={v => setForm(f => ({ ...f, responsavelInterno: v }))} required placeholder="Nome do acompanhante" />
                 {(profile.role === 'master' || profile.role === 'admin') && (
                   <Select label="Empresa de Acesso (Unidade)" value={form.companyId} onChange={v => setForm(f => ({ ...f, companyId: v }))} required>
-                    <option value="">— Selecione —</option>
-                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    <CompanySelectOptions companies={companies} />
                   </Select>
                 )}
                 <Input label="Liberado Até" type="date" value={form.liberadoAte} onChange={v => setForm(f => ({ ...f, liberadoAte: v }))} />
@@ -1090,8 +1114,7 @@ function TreinamentosView({ profile }: { profile: UserProfile }) {
               )}
               {(profile.role === 'master' || (profile.role === 'admin' && form.escopo === 'personalizado')) && (profile.role === 'admin' || form.escopo === 'personalizado') && (
                 <Select label="Empresa Responsável" value={form.companyId} onChange={v => setForm(f => ({ ...f, companyId: v }))} required>
-                  <option value="">— Selecione —</option>
-                  {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <CompanySelectOptions companies={companies} />
                 </Select>
               )}
               <div className="flex justify-end gap-2 pt-2">
@@ -1681,8 +1704,7 @@ function UsuariosView({ profile }: { profile: UserProfile }) {
               </Select>
               {(profile.role === 'master' || (profile.role === 'admin' && form.role !== 'master')) && (
                 <Select label="Empresa" value={form.companyId} onChange={v => setForm(f => ({ ...f, companyId: v }))} required>
-                  <option value="">— Selecione —</option>
-                  {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <CompanySelectOptions companies={companies} />
                 </Select>
               )}
               <div className="p-3 bg-blue-50 rounded-xl flex items-start gap-2 text-xs text-blue-700">
