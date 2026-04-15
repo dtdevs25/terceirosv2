@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { api, getStoredUser, saveSession, clearSession } from './api';
 import type {
   UserProfile, Company, EmpresaTerceiro, TipoTreinamento,
@@ -127,9 +128,13 @@ function Modal({ title, onClose, children, size = 'md' }: {
   title: string; onClose: () => void; children: React.ReactNode; size?: 'md' | 'lg' | 'xl';
 }) {
   const widths = { md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-4xl' };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+  
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }} 
+        animate={{ scale: 1, opacity: 1 }} 
+        exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
         className={cn('bg-white rounded-2xl shadow-2xl w-full max-h-[90vh] overflow-y-auto', widths[size])}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
@@ -138,7 +143,8 @@ function Modal({ title, onClose, children, size = 'md' }: {
         </div>
         <div className="px-6 py-5">{children}</div>
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1678,10 +1684,10 @@ function UsuariosView({ profile }: { profile: UserProfile }) {
                       >
                         <Pencil size={16} />
                       </button>
-                      {(u.uid !== profile.uid && u.id !== profile.id) && (
+                      {u.id !== profile.id && (
                         <button
                           onClick={() => setShowDeleteConfirm(u)}
-                          className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all"
+                          className="p-1.5 rounded-xl text-red-500 hover:text-red-700 hover:bg-red-50 transition-all"
                           title="Excluir Usuário"
                         >
                           <Trash2 size={16} />
